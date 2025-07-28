@@ -89,7 +89,7 @@ static ssize_t mim_upload_cb(void *buf, size_t size, void *userdata)
     return fread(buf, 1, size, (FILE *)userdata);
 }
 // TODO: cleanup
-bool mount_dev_image(char *udid)
+bool mount_dev_image(const char *udid, const char *image_dir_path)
 {
     mobile_image_mounter_client_t mim = NULL;
     int res = -1;
@@ -137,16 +137,14 @@ bool mount_dev_image(char *udid)
     char *image_path = nullptr;
     char *image_sig_path = nullptr;
 
-    if (asprintf(&image_path,
-                 "%s/resources/dev-images/15/DeveloperDiskImage.dmg",
-                 SOURCE_DIR) < 0) {
+    if (asprintf(&image_path, "%s/DeveloperDiskImage.dmg", image_dir_path) <
+        0) {
         qDebug() << "Out of memory constructing image path!";
         return false;
     }
 
-    if (asprintf(&image_sig_path,
-                 "%s/resources/dev-images/15/DeveloperDiskImage.dmg.signature",
-                 SOURCE_DIR) < 0) {
+    if (asprintf(&image_sig_path, "%s/DeveloperDiskImage.dmg.signature",
+                 image_dir_path) < 0) {
         qDebug() << "Out of memory constructing signature path!";
         free(image_path);
         return false;

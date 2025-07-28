@@ -3,6 +3,7 @@
 #include "./core/services/restart.cpp"
 #include "airplaywindow.h"
 #include "appcontext.h"
+#include "devdiskimageswidget.h"
 #include "iDescriptor.h"
 #include "querymobilegestaltwidget.h"
 #include "realtimescreen.h"
@@ -132,6 +133,10 @@ void ToolboxWidget::setupUI()
         createToolbox("Enter Recovery Mode", "Enter device recovery mode",
                       "SP_DialogOkButton", true);
 
+    QWidget *devDiskImages =
+        createToolbox("Developer Disk Images", "Manage developer disk images",
+                      "SP_DialogOkButton", false);
+
     // Add toolboxes to grid (3 columns)
     m_gridLayout->addWidget(airplayerBox, 0, 0);
     m_gridLayout->addWidget(virtualLocationBox, 0, 1);
@@ -145,6 +150,7 @@ void ToolboxWidget::setupUI()
     m_gridLayout->addWidget(enterRecoveryMode, 3, 0);
     m_gridLayout->addWidget(mountDevImage, 3, 1);
     m_gridLayout->addWidget(unmountDevImage, 3, 2);
+    m_gridLayout->addWidget(devDiskImages, 4, 0, 1, 3);
 
     m_gridLayout->setRowStretch(3, 1);
 
@@ -161,9 +167,10 @@ QWidget *ToolboxWidget::createToolbox(const QString &title,
                                       bool requiresDevice)
 {
     QFrame *frame = new QFrame();
+    frame->setObjectName("toolboxFrame");
     frame->setFrameStyle(QFrame::Box);
-    frame->setStyleSheet(
-        "QFrame { border: 1px solid #ccc; border-radius: 5px; padding: 5px; }");
+    frame->setStyleSheet("#toolboxFrame { border: 1px solid #ccc; "
+                         "border-radius: 5px; padding: 5px; }");
     frame->setFixedSize(200, 120);
 
     QVBoxLayout *layout = new QVBoxLayout(frame);
@@ -259,11 +266,12 @@ void ToolboxWidget::updateToolboxStates()
         toolbox->setEnabled(enabled);
 
         if (enabled) {
-            toolbox->setStyleSheet("QFrame { border: 1px solid #ccc; "
+            toolbox->setStyleSheet("#toolboxFrame { border: 1px solid #ccc; "
                                    "border-radius: 5px; padding: 5px; }");
         } else {
             toolbox->setStyleSheet(
-                "QFrame { border: 1px solid #ccc; border-radius: 5px; padding: "
+                "#toolboxFrame { border: 1px solid #ccc; border-radius: 5px; "
+                "padding: "
                 "5px; background-color: #f0f0f0; color: #999; }");
         }
     }
@@ -323,16 +331,17 @@ void ToolboxWidget::onToolboxClicked(const QString &toolName)
         msgBox.exec();
     } else if (toolName == "Mount Dev Image") {
         // Handle mounting device image
-        bool success =
-            mount_dev_image(const_cast<char *>(m_currentDevice->udid.c_str()));
-        QMessageBox msgBox;
-        msgBox.setWindowTitle("Mount Dev Image");
-        if (success) {
-            msgBox.setText("Successfully mounted device image.");
-        } else {
-            msgBox.setText("Failed to mount device image.");
-        }
-        msgBox.exec();
+        // bool success =
+        //     mount_dev_image(const_cast<char
+        //     *>(m_currentDevice->udid.c_str()));
+        // QMessageBox msgBox;
+        // msgBox.setWindowTitle("Mount Dev Image");
+        // if (success) {
+        //     msgBox.setText("Successfully mounted device image.");
+        // } else {
+        //     msgBox.setText("Failed to mount device image.");
+        // }
+        // msgBox.exec();
     } else if (toolName == "Virtual Location") {
         // Handle virtual location functionality
         VirtualLocation *virtualLocation = new VirtualLocation(m_currentDevice);
@@ -369,6 +378,14 @@ void ToolboxWidget::onToolboxClicked(const QString &toolName)
         QueryMobileGestaltWidget *queryMobileGestaltWidget =
             new QueryMobileGestaltWidget();
         queryMobileGestaltWidget->show();
+    } else if (toolName == "Developer Disk Images") {
+        // Handle developer disk images
+        DevDiskImagesWidget *devDiskImagesWidget =
+            new DevDiskImagesWidget(m_currentDevice);
+        devDiskImagesWidget->setAttribute(Qt::WA_DeleteOnClose);
+        devDiskImagesWidget->setWindowFlag(Qt::Window);
+        devDiskImagesWidget->resize(800, 600);
+        devDiskImagesWidget->show();
     }
     // Implement specific tool functionality here
 }
