@@ -1,0 +1,122 @@
+name: Build iDescriptor
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        # os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.7.2'
+          modules: 'qtmultimedia qtlocation qtpositioning qtquick qtquickwidgets qtsvg'
+
+      - name: Install Linux dependencies (apt)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libpugixml-dev \
+            libusb-1.0-0-dev \
+            libplist-2.0-dev \
+            libqrencode-dev \
+            libirecovery-1.0-dev
+
+      - name: Install libtatsu
+        if: runner.os == 'Linux'
+        run: |
+          git clone https://github.com/libimobiledevice/libtatsu.git
+          cd libtatsu
+          ./autogen.sh
+          sudo make install
+
+      - name: Install libimobiledevice
+        if: runner.os == 'Linux'
+        run: |
+          git clone https://github.com/libimobiledevice/libimobiledevice.git
+          cd libimobiledevice
+          ./autogen.sh
+          sudo make install
+
+      - name: Install macOS dependencies (brew)
+        if: runner.os == 'macOS'
+        run: |
+          brew install \
+            pkg-config \
+            pugixml \
+            libusb \
+            libplist \
+            qrencode \
+            openssl \
+            libssh \
+            libzip \
+            libimobiledevice \
+            libimobiledevice-glue \
+            irecovery
+        # NOTE: tatsu and frida-core are not in Homebrew.
+        # You would need to build them from source here.
+
+      - name: Install Windows dependencies (vcpkg)
+        if: runner.os == 'Windows'
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '1e975a6660e725c1b23f7234b02e4d94c33745e3'
+          vcpkgJsonGlob: '**/vcpkg.json' # Recommended to create a vcpkg.json
+        # If not using vcpkg.json, you can install manually:
+        # run: |
+        #   vcpkg install pugixml libusb libplist qrencode openssl libssh libzip --triplet x64-windows
+
+      - name: Configure CMake (Linux/macOS)
+        if: runner.os == 'Linux' || runner.os == 'macOS'
+        run: |
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
+
+      - name: Build with CMake
+        run: cmake --build build --config Release --parallel
+
+      - name: Package Linux Artifact
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p release
+          cp build/iDescriptor release/
+
+      - name: Package macOS Artifact
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p release
+          cp -r build/iDescriptor.app release/
+
+      - name: Package Windows Artifact
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p release
+          cp build/Release/iDescriptor.exe release/
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: iDescriptor-${{ matrix.os }}
+          path: release/

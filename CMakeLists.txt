@@ -179,11 +179,11 @@ target_link_libraries(iDescriptor PRIVATE
     # ${PLIST_LIBRARY}
     ${TATSU_LIBRARY}
     ${IRECOVERY_LIBRARY}
-    ${SSL_LIBRARY}
-    ${CRYPTO_LIBRARY}
-    ${FRIDA_LIBRARY}
-    ${SSH_LIBRARY}
-    ${ZIP_LIBRARY}
+    # ${SSL_LIBRARY}
+    # ${CRYPTO_LIBRARY}
+    # ${FRIDA_LIBRARY}
+    # ${SSH_LIBRARY}
+    # ${ZIP_LIBRARY}
     PkgConfig::PUGIXML
     PkgConfig::USB
     PkgConfig::PLIST
