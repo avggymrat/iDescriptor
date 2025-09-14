@@ -27,14 +27,21 @@
 // TODO:break all the client because device wont restart if any client is still
 // connected we need to change the main device init function to not connect to
 // any client
-bool restart(idevice_t device)
+bool restart(std::string _udid)
 {
+    idevice_t device = NULL;
     lockdownd_client_t lockdown_client = NULL;
     diagnostics_relay_client_t diagnostics_client = NULL;
     lockdownd_error_t ret = LOCKDOWN_E_UNKNOWN_ERROR;
     lockdownd_service_descriptor_t service = NULL;
-    const char *udid = NULL;
+    const char *udid = _udid.c_str();
     int use_network = 0;
+
+    if (idevice_new_with_options(&device, udid, IDEVICE_LOOKUP_USBMUX) !=
+        IDEVICE_E_SUCCESS) {
+        printf("ERROR: No device found, is it plugged in?\n");
+        return false;
+    }
 
     if (LOCKDOWN_E_SUCCESS != (ret = lockdownd_client_new_with_handshake(
                                    device, &lockdown_client, TOOL_NAME))) {
@@ -80,11 +87,6 @@ bool restart(idevice_t device)
 
         diagnostics_relay_goodbye(diagnostics_client);
         diagnostics_relay_client_free(diagnostics_client);
-    }
-
-    if (service) {
-        lockdownd_service_descriptor_free(service);
-        service = NULL;
     }
 
     return false;

@@ -118,6 +118,33 @@ void AppContext::addDevice(QString udid, idevice_connection_type conn_type,
         // processing device information");
     }
 }
+// TODO:WIP
+void AppContext::instanceRemoveDevice(QString _udid)
+{
+    const std::string uuid = _udid.toStdString();
+    if (!m_devices.contains(uuid)) {
+        qDebug() << "Device with UUID " + _udid +
+                        " not found. Please report this issue.",
+            "Error";
+        return;
+    }
+
+    qDebug() << "Removing device with UUID:" << QString::fromStdString(uuid);
+
+    // cleanDevice(device);
+    iDescriptorDevice *device = m_devices[uuid];
+    m_devices.remove(uuid);
+
+    emit deviceRemoved(uuid);
+    // TODO: Cleanup now should be done wherever there are initialized
+    //  lockdownd_client_free(device->lockdownClient);
+    if (device->afcClient)
+        afc_client_free(device->afcClient);
+    idevice_free(device->device);
+    // lockdownd_service_descriptor_free(device->lockdownService);
+    delete device;
+    // return true;
+}
 
 void AppContext::removeDevice(QString _udid)
 
@@ -139,7 +166,8 @@ void AppContext::removeDevice(QString _udid)
     emit deviceRemoved(uuid);
     // TODO: Cleanup now should be done wherever there are initialized
     //  lockdownd_client_free(device->lockdownClient);
-    //  afc_client_free(device->afcClient);
+    if (device->afcClient)
+        afc_client_free(device->afcClient);
     idevice_free(device->device);
     // lockdownd_service_descriptor_free(device->lockdownService);
     delete device;

@@ -346,9 +346,20 @@ void ToolboxWidget::onToolboxClicked(const QString &toolName)
         virtualLocation->resize(800, 600);          // Optional: default size
         virtualLocation->show();
     } else if (toolName == "Restart") {
-        if (!(restart(m_currentDevice->device)))
+        // TODO:WIP
+        std::string udid = m_currentDevice->udid;
+        AppContext::sharedInstance()->instanceRemoveDevice(
+            QString::fromStdString(udid));
+        // QMetaObject::invokeMethod(AppContext::sharedInstance(),
+        // "removeDevice",
+        //                           Qt::QueuedConnection,
+        //                           Q_ARG(QString, QString(udid.c_str())));
+        if (!(restart(udid)))
             warn("Failed to restart device");
-        qDebug() << "Restarting device services...";
+        else {
+            warn("Device services restarted successfully", "Success");
+            qDebug() << "Restarting device";
+        }
     } else if (toolName == "Shutdown") {
         // TODO
         //  if (!(shutdown(m_currentDevice->device)))
@@ -371,7 +382,7 @@ void ToolboxWidget::onToolboxClicked(const QString &toolName)
     } else if (toolName == "Query MobileGestalt") {
         // Handle querying MobileGestalt
         QueryMobileGestaltWidget *queryMobileGestaltWidget =
-            new QueryMobileGestaltWidget();
+            new QueryMobileGestaltWidget(m_currentDevice);
         queryMobileGestaltWidget->show();
     } else if (toolName == "Developer Disk Images") {
         // Handle developer disk images
