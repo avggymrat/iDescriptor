@@ -29,6 +29,15 @@ struct BatteryInfo {
     // uint64_t maxCapacity;
     // uint64_t fullChargeCapacity;
     std::string serialNumber;
+    bool isCharging;
+    bool fullyCharged;
+    uint64_t currentBatteryLevel;
+    enum class ConnectionType {
+        USB,
+        USB_TYPEC,
+    } usbConnectionType;
+    uint64_t adapterVoltage; // in mV
+    uint64_t watts;
 };
 
 //! IOS 12
@@ -59,6 +68,7 @@ struct DeviceInfo {
     } activationState;
     std::string activationStateAcknowledged;
     std::string productType;
+    std::string rawProductType;
     bool jailbroken;
     std::string basebandActivationTicketVersion;
     std::string basebandCertId;
@@ -120,6 +130,7 @@ struct DeviceInfo {
     bool productionDevice;
     BatteryInfo batteryInfo;
     DiskInfo diskInfo;
+    bool is_iPhone;
 };
 
 struct iDescriptorDevice {
@@ -132,6 +143,7 @@ struct iDescriptorDevice {
      clients are not long lived, so do not assume this will be valid
     */
     afc_client_t afcClient;
+    bool is_iPhone;
 };
 
 struct IDescriptorInitDeviceResult {
@@ -248,6 +260,7 @@ private:
 public:
     PlistNavigator(plist_t node) : current_node(node) {}
 
+    // Existing dictionary key access
     PlistNavigator operator[](const char *key)
     {
         if (!current_node || plist_get_node_type(current_node) != PLIST_DICT) {
@@ -257,8 +270,53 @@ public:
         return PlistNavigator(next);
     }
 
+    // Add array index access
+    PlistNavigator operator[](int index)
+    {
+        if (!current_node || plist_get_node_type(current_node) != PLIST_ARRAY) {
+            return PlistNavigator(nullptr);
+        }
+        if (index < 0 ||
+            index >= static_cast<int>(plist_array_get_size(current_node))) {
+            return PlistNavigator(nullptr);
+        }
+        plist_t next = plist_array_get_item(current_node, index);
+        return PlistNavigator(next);
+    }
+
     operator plist_t() const { return current_node; }
     bool valid() const { return current_node != nullptr; }
+
+    // Your existing helper methods
+    bool getBool() const
+    {
+        if (!current_node)
+            return false;
+        uint8_t value = false;
+        plist_get_bool_val(current_node, &value);
+        return value;
+    }
+
+    uint64_t getUInt() const
+    {
+        if (!current_node)
+            return 0;
+        uint64_t value = 0;
+        plist_get_uint_val(current_node, &value);
+        return value;
+    }
+
+    std::string getString() const
+    {
+        if (!current_node)
+            return "";
+        char *value = nullptr;
+        plist_get_string_val(current_node, &value);
+        std::string result = value ? value : "";
+        if (value)
+            free(value);
+        return result;
+    }
 };
 
 afc_error_t safe_afc_read_directory(afc_client_t afcClient, idevice_t device,
@@ -377,3 +435,6 @@ bool query_mobile_gestalt(iDescriptorDevice *id_device, const QStringList &keys,
 ;
 
 std::string safeGetXML(const char *key, pugi::xml_node dict);
+
+void get_battery_info(std::string productType, idevice_t idevice,
+                      bool is_iphone, plist_t &diagnostics);

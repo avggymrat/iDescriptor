@@ -36,8 +36,8 @@ std::string safeGetXML(const char *key, pugi::xml_node dict)
 
 // TODO: return tyype
 DeviceInfo fullDeviceInfo(const pugi::xml_document &doc,
-                          afc_client_t &afcClient, plist_t &diagnostics,
-                          DeviceInfo &d)
+                          afc_client_t &afcClient,
+                          IDescriptorInitDeviceResult &result)
 {
     pugi::xml_node dict = doc.child("plist").child("dict");
     auto safeGet = [&](const char *key) -> std::string {
@@ -67,7 +67,7 @@ DeviceInfo fullDeviceInfo(const pugi::xml_document &doc,
         }
         return false;
     };
-
+    DeviceInfo &d = result.deviceInfo;
     d.deviceName = safeGet("DeviceName");
     d.deviceClass = safeGet("DeviceClass");
     d.deviceColor = safeGet("DeviceColor");
@@ -115,37 +115,70 @@ DeviceInfo fullDeviceInfo(const pugi::xml_document &doc,
             DeviceInfo::ActivationState::Unactivated; // Default value
     }
     // TODO:RegionInfo: LL/A
-    d.productType = parse_product_type(safeGet("ProductType"));
+    std::string rawProductType = safeGet("ProductType");
+    d.productType = parse_product_type(rawProductType);
+    d.rawProductType = rawProductType;
     d.jailbroken = detect_jailbroken(afcClient);
+    d.is_iPhone = safeGet("DeviceClass") == "iPhone";
 
-    uint64_t cycleCount;
-    plist_get_uint_val(
-        PlistNavigator(diagnostics)["IORegistry"]["BatteryData"]["CycleCount"],
-        &cycleCount);
+    /*BatteryInfo*/
+    plist_t diagnostics = nullptr;
+    get_battery_info(rawProductType, result.device, d.is_iPhone, diagnostics);
+    if (!diagnostics) {
+        qDebug() << "Failed to get diagnostics plist.";
+        return d;
+    }
 
-    char *batterySerialNumber = nullptr;
-    plist_get_string_val(
+    plist_print(diagnostics);
+    uint64_t cycleCount =
+        PlistNavigator(diagnostics)["IORegistry"]["BatteryData"]["CycleCount"]
+            .getUInt();
+
+    std::string batterySerialNumber =
         PlistNavigator(
-            diagnostics)["IORegistry"]["BatteryData"]["BatterySerialNumber"],
-        &batterySerialNumber);
-
-    uint64_t designCapacity = 0;
-    plist_get_uint_val(
+            diagnostics)["IORegistry"]["BatteryData"]["BatterySerialNumber"]
+            .getString();
+    uint64_t designCapacity =
         PlistNavigator(
-            diagnostics)["IORegistry"]["BatteryData"]["DesignCapacity"],
-        &designCapacity);
+            diagnostics)["IORegistry"]["BatteryData"]["DesignCapacity"]
+            .getUInt();
 
-    uint64_t absoluteCapacity = 0;
-    plist_get_uint_val(
-        PlistNavigator(diagnostics)["IORegistry"]["AbsoluteCapacity"],
-        &absoluteCapacity);
+    uint64_t appleRawCurrentCapacity =
+        PlistNavigator(diagnostics)["IORegistry"]["AppleRawCurrentCapacity"]
+            .getUInt();
 
     d.batteryInfo.health =
-        QString::number((absoluteCapacity * 100) / designCapacity) + "%";
+        QString::number((appleRawCurrentCapacity * 100) / designCapacity) + "%";
     d.batteryInfo.cycleCount = cycleCount;
-    d.batteryInfo.serialNumber = batterySerialNumber
+    d.batteryInfo.serialNumber = !batterySerialNumber.empty()
                                      ? batterySerialNumber
                                      : "Error retrieving serial number";
+
+    d.batteryInfo.isCharging =
+        PlistNavigator(diagnostics)["IORegistry"]["IsCharging"].getBool();
+
+    d.batteryInfo.fullyCharged =
+        PlistNavigator(diagnostics)["IORegistry"]["FullyCharged"].getBool();
+
+    d.batteryInfo.currentBatteryLevel =
+        PlistNavigator(diagnostics)["IORegistry"]["CurrentCapacity"].getUInt();
+
+    d.batteryInfo.usbConnectionType =
+        PlistNavigator(
+            diagnostics)["IORegistry"]["AdapterDetails"]["Description"]
+                    .getString() == "usb type-c"
+            ? BatteryInfo::ConnectionType::USB_TYPEC
+            : BatteryInfo::ConnectionType::USB;
+
+    d.batteryInfo.adapterVoltage =
+        PlistNavigator(diagnostics)["IORegistry"]["AppleRawAdapterDetails"][0]
+                                   ["AdapterVoltage"]
+                                       .getUInt();
+
+    d.batteryInfo.watts =
+        PlistNavigator(
+            diagnostics)["IORegistry"]["AppleRawAdapterDetails"][0]["Watts"]
+            .getUInt();
 
     plist_free(diagnostics);
     diagnostics = nullptr;
@@ -167,7 +200,6 @@ IDescriptorInitDeviceResult init_idescriptor_device(const char *udid)
     // LOCKDOWN_E_PAIRING_DIALOG_RESPONSE_PENDING         = -19,
     lockdownd_error_t ldret = LOCKDOWN_E_UNKNOWN_ERROR;
     lockdownd_service_descriptor_t lockdownService = nullptr;
-    diagnostics_relay_client_t diagnostics_client = nullptr;
     afc_client_t afcClient = nullptr;
     try {
         idevice_error_t ret = idevice_new_with_options(&result.device, udid,
@@ -211,13 +243,6 @@ IDescriptorInitDeviceResult init_idescriptor_device(const char *udid)
             return result;
         }
 
-        if (diagnostics_relay_client_start_service(
-                result.device, &diagnostics_client, nullptr) !=
-            DIAGNOSTICS_RELAY_E_SUCCESS) {
-            qDebug() << "Failed to start diagnostics relay service.";
-            return result;
-        }
-
         pugi::xml_document infoXml;
         get_device_info_xml(udid, 0, 0, infoXml, client, result.device);
 
@@ -232,62 +257,20 @@ IDescriptorInitDeviceResult init_idescriptor_device(const char *udid)
             return result;
         }
 
-        plist_t diagnostics = nullptr;
         std::string productType =
             safeGetXML("ProductType", infoXml.child("plist").child("dict"));
 
-        bool is_iphone =
-            safeGetXML("DeviceClass", infoXml.child("plist").child("dict")) ==
-            "iPhone";
-        if (is_iphone) {
-
-            qDebug() << "iPhone is newer than iPhone 8 ?"
-                     << is_product_type_newer(productType,
-                                              std::string("iPhone10,1"));
-        }
-
-        const char *batteryQuery =
-            is_iphone
-                ? is_product_type_newer(productType, std::string("iPhone8,1"))
-                      ? "AppleSmartBattery"
-                      : "AppleARMPMUCharger"
-                : "AppleARMPMUCharger";
-        // TODO: iPhone 8 and above should query AppleSmartBattery
-        // TODO: try catch here
-
-        if (diagnostics_relay_query_ioregistry_entry(
-                diagnostics_client, nullptr, batteryQuery, &diagnostics) !=
-                DIAGNOSTICS_RELAY_E_SUCCESS &&
-            !diagnostics) {
-
-            qDebug()
-                << "Failed to query diagnostics relay for AppleARMPMUCharger.";
-            // Clean up resources before returning
-            // if (afcClient)
-            // afc_client_free(afcClient);
-            if (lockdownService)
-                lockdownd_service_descriptor_free(lockdownService);
-            if (client)
-                lockdownd_client_free(client);
-            if (diagnostics_client)
-                diagnostics_relay_client_free(diagnostics_client);
-            return result;
-        }
-
         // if (result.device) idevice_free(result.device);
 
-        fullDeviceInfo(infoXml, afcClient, diagnostics, result.deviceInfo);
+        fullDeviceInfo(infoXml, afcClient, result);
         result.afcClient = afcClient;
         result.success = true;
-        // TODO: cleanup needed ?
-        // if (afcClient)
-        //     afc_client_free(afcClient);
-        // if (lockdownService)
-        //     lockdownd_service_descriptor_free(lockdownService);
-        // if (client)
-        //     lockdownd_client_free(client);
-        // if (diagnostics_client)
-        //     diagnostics_relay_client_free(diagnostics_client);
+
+        if (lockdownService)
+            lockdownd_service_descriptor_free(lockdownService);
+        if (client)
+            lockdownd_client_free(client);
+
         return result;
 
     } catch (const std::exception &e) {

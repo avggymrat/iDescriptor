@@ -1,4 +1,5 @@
 #include "deviceinfowidget.h"
+#include "batterywidget.h"
 #include "diskusagewidget.h"
 #include "fileexplorerwidget.h"
 #include "iDescriptor.h"
@@ -16,6 +17,7 @@
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QTabWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 
 // A custom QGraphicsView that keeps the content fitted with aspect ratio on
@@ -39,7 +41,7 @@ protected:
 };
 
 DeviceInfoWidget::DeviceInfoWidget(iDescriptorDevice *device, QWidget *parent)
-    : QWidget(parent), device(device)
+    : QWidget(parent), m_device(device)
 {
     // Main layout with horizontal orientation
     QHBoxLayout *mainLayout = new QHBoxLayout(this);
@@ -74,15 +76,49 @@ DeviceInfoWidget::DeviceInfoWidget(iDescriptorDevice *device, QWidget *parent)
 
     // Header
     QWidget *headerWidget = new QWidget();
+    headerWidget->setObjectName("headerWidget");
+    headerWidget->setStyleSheet("QWidget#headerWidget { "
+                                "   border: 1px solid #ccc; "
+                                "   border-radius: 6px; "
+                                "}");
+
     QHBoxLayout *headerLayout = new QHBoxLayout(headerWidget);
-    // headerLayout->setContentsMargins(0, 0, 0, 0);
-    // headerLayout->setSpacing(10);
+    headerLayout->setContentsMargins(10, 10, 10, 10);
+    headerLayout->setSpacing(15);
 
     QLabel *devProductType =
         new QLabel(QString::fromStdString(device->deviceInfo.productType));
     devProductType->setStyleSheet("font-size: 1rem; font-weight: bold;");
 
+    QLabel *diskCapacityLabel = new QLabel(
+        QString::number(device->deviceInfo.diskInfo.totalDiskCapacity /
+                        (1000 * 1000 * 1000)) +
+        " GB");
+    m_chargingStatusLabel =
+        new QLabel(device->deviceInfo.batteryInfo.isCharging ? "Charging"
+                                                             : "Not Charging");
+    m_chargingStatusLabel->setStyleSheet("font-size: 1rem;");
+
+    m_chargingWattsLabel =
+        new QLabel(QString::number(device->deviceInfo.batteryInfo.watts) + "W");
+
+    m_cableTypeLabel =
+        new QLabel(device->deviceInfo.batteryInfo.usbConnectionType ==
+                           BatteryInfo::ConnectionType::USB
+                       ? "USB"
+                       : "USB-C");
+
+    m_batteryWidget =
+        new BatteryWidget(device->deviceInfo.batteryInfo.currentBatteryLevel,
+                          device->deviceInfo.batteryInfo.isCharging, this);
+
     headerLayout->addWidget(devProductType);
+    headerLayout->addWidget(diskCapacityLabel);
+    headerLayout->addWidget(m_chargingStatusLabel);
+    headerLayout->addWidget(m_batteryWidget);
+    headerLayout->addWidget(m_chargingWattsLabel);
+    headerLayout->addWidget(m_cableTypeLabel);
+
     infoLayout->addWidget(headerWidget);
     // add spacer
     infoLayout->addSpacerItem(
@@ -102,6 +138,7 @@ DeviceInfoWidget::DeviceInfoWidget(iDescriptorDevice *device, QWidget *parent)
     gridLayout->setColumnStretch(1, 1); // Allow value column to stretch
     gridLayout->setColumnStretch(
         3, 1); // Allow value column for right side to stretch
+    gridLayout->setContentsMargins(17, 17, 17, 17);
     gridWidget->setLayout(gridLayout);
     QList<QPair<QString, QWidget *>> infoItems;
 
@@ -229,6 +266,11 @@ DeviceInfoWidget::DeviceInfoWidget(iDescriptorDevice *device, QWidget *parent)
     rightSideLayout->addWidget(new DiskUsageWidget(device, this));
     rightSideLayout->setAlignment(Qt::AlignCenter);
     mainLayout->addLayout(rightSideLayout, 2); // Stretch factor 2
+
+    m_updateTimer = new QTimer(this);
+    connect(m_updateTimer, &QTimer::timeout, this,
+            &DeviceInfoWidget::updateBatteryInfo);
+    m_updateTimer->start(30000); // Update every 30 seconds
 }
 
 void DeviceInfoWidget::onBatteryMoreClicked()
@@ -237,9 +279,9 @@ void DeviceInfoWidget::onBatteryMoreClicked()
     msgBox.setWindowTitle("Battery Details");
     QString details =
         "Battery Cycle Count: " +
-        QString::number(device->deviceInfo.batteryInfo.cycleCount) + "\n" +
+        QString::number(m_device->deviceInfo.batteryInfo.cycleCount) + "\n" +
         "Battery Serial Number: " +
-        QString::fromStdString(device->deviceInfo.batteryInfo.serialNumber);
+        QString::fromStdString(m_device->deviceInfo.batteryInfo.serialNumber);
     msgBox.setText(details);
     msgBox.exec();
 }
@@ -265,4 +307,58 @@ QPixmap DeviceInfoWidget::getDeviceIcon(const std::string &productType)
     }
 
     return icon;
+}
+
+void DeviceInfoWidget::updateBatteryInfo()
+{
+    qDebug() << "Updating battery info...";
+    plist_t diagnostics = nullptr;
+    get_battery_info(m_device->deviceInfo.rawProductType, m_device->device,
+                     m_device->deviceInfo.is_iPhone, diagnostics);
+
+    if (!diagnostics) {
+        qDebug() << "Failed to get diagnostics plist.";
+        return;
+    }
+    /*DATA*/
+    DeviceInfo &d = m_device->deviceInfo;
+
+    d.batteryInfo.isCharging =
+        PlistNavigator(diagnostics)["IORegistry"]["IsCharging"].getBool();
+
+    d.batteryInfo.fullyCharged =
+        PlistNavigator(diagnostics)["IORegistry"]["FullyCharged"].getBool();
+
+    d.batteryInfo.currentBatteryLevel =
+        PlistNavigator(diagnostics)["IORegistry"]["CurrentCapacity"].getUInt();
+
+    d.batteryInfo.usbConnectionType =
+        PlistNavigator(
+            diagnostics)["IORegistry"]["AdapterDetails"]["Description"]
+                    .getString() == "usb type-c"
+            ? BatteryInfo::ConnectionType::USB_TYPEC
+            : BatteryInfo::ConnectionType::USB;
+
+    d.batteryInfo.adapterVoltage =
+        PlistNavigator(diagnostics)["IORegistry"]["AppleRawAdapterDetails"][0]
+                                   ["AdapterVoltage"]
+                                       .getUInt();
+
+    d.batteryInfo.watts =
+        PlistNavigator(
+            diagnostics)["IORegistry"]["AppleRawAdapterDetails"][0]["Watts"]
+            .getUInt();
+
+    /*UI*/
+
+    m_chargingStatusLabel->setText(d.batteryInfo.isCharging ? "Charging"
+                                                            : "Not Charging");
+    m_chargingWattsLabel->setText(QString::number(d.batteryInfo.watts) + "W");
+    m_cableTypeLabel->setText(d.batteryInfo.usbConnectionType ==
+                                      BatteryInfo::ConnectionType::USB
+                                  ? "USB"
+                                  : "USB-C");
+
+    m_batteryWidget->updateContext(d.batteryInfo.isCharging,
+                                   d.batteryInfo.currentBatteryLevel);
 }
