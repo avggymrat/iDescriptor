@@ -58,19 +58,16 @@ void AppsWidget::setupUI()
     mainLayout->setSpacing(0);
 
     // Header with login
-    QFrame *headerFrame = new QFrame();
-    headerFrame->setFixedHeight(60);
-    headerFrame->setStyleSheet("border-bottom: 1px solid #dee2e6;");
+    QWidget *headerWidget = new QWidget();
+    headerWidget->setFixedHeight(60);
+    headerWidget->setStyleSheet("border-bottom: 1px solid #dee2e6;");
 
-    QHBoxLayout *headerLayout = new QHBoxLayout(headerFrame);
+    QHBoxLayout *headerLayout = new QHBoxLayout(headerWidget);
     headerLayout->setContentsMargins(20, 10, 20, 10);
 
     QLabel *titleLabel = new QLabel("App Store");
     titleLabel->setStyleSheet(
         "font-size: 24px; font-weight: bold; color: #333;");
-    headerLayout->addWidget(titleLabel);
-
-    headerLayout->addStretch();
 
     // Create status label first
     m_statusLabel = new QLabel("Not signed in");
@@ -120,22 +117,17 @@ void AppsWidget::setupUI()
         }
     }
     m_statusLabel->setStyleSheet("font-size: 14px; color: #666;");
-    headerLayout->addWidget(m_statusLabel);
 
     m_loginButton = new QPushButton(m_isLoggedIn ? "Sign Out" : "Sign In");
     m_loginButton->setStyleSheet(
         "background-color: #007AFF; color: white; border: none; border-radius: "
         "4px; padding: 8px 16px; font-size: 14px;");
-    headerLayout->addWidget(m_loginButton);
 
-    mainLayout->addWidget(headerFrame);
-
-    // --- Search Bar ---
-    QHBoxLayout *searchContainerLayout = new QHBoxLayout();
-    searchContainerLayout->setContentsMargins(20, 15, 20, 15);
+    mainLayout->addWidget(headerWidget);
 
     m_searchEdit = new QLineEdit();
-    m_searchEdit->setPlaceholderText("Search for apps...");
+    m_searchEdit->setPlaceholderText(m_isLoggedIn ? "Search for apps..."
+                                                  : "Sign in to search");
     m_searchEdit->setMaximumWidth(400);
     m_searchEdit->setStyleSheet("QLineEdit { "
                                 "  padding: 8px; "
@@ -151,19 +143,21 @@ void AppsWidget::setupUI()
     connect(searchAction, &QAction::triggered, this,
             &AppsWidget::performSearch);
 
-    searchContainerLayout->addStretch();
-    searchContainerLayout->addWidget(m_searchEdit);
-    searchContainerLayout->addStretch();
+    headerLayout->addWidget(titleLabel);
 
-    mainLayout->addLayout(searchContainerLayout);
-
-    // --- Status and Login Button ---
+    headerLayout->addStretch();
+    headerLayout->addWidget(m_searchEdit);
+    headerLayout->addStretch();
+    headerLayout->addWidget(m_statusLabel);
+    headerLayout->addWidget(m_loginButton);
 
     // Scroll area for apps
     m_scrollArea = new QScrollArea();
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_scrollArea->setStyleSheet("border: none;");
+    m_scrollArea->setStyleSheet(
+        "QScrollArea { background: transparent; border: none; }");
+    m_scrollArea->viewport()->setStyleSheet("background: transparent;");
 
     m_contentWidget = new QWidget();
     QGridLayout *gridLayout = new QGridLayout(m_contentWidget);
@@ -254,20 +248,11 @@ void AppsWidget::createAppCard(const QString &name, const QString &bundleId,
                                const QString &iconPath, QGridLayout *gridLayout,
                                int row, int col)
 {
-    QFrame *cardFrame = new QFrame();
-    cardFrame->setObjectName("cardFrame");
-    cardFrame->setFixedSize(200, 250);
-    cardFrame->setStyleSheet("#cardFrame {"
-                             "  border: 1px solid #ddd;"
-                             "  border-radius: 8px;"
-                             "  background-color: #fff;"
-                             "}"
-                             "#cardFrame:hover {"
-                             "  border: 1.5px solid #007AFF;"
-                             "}");
-    cardFrame->setCursor(Qt::PointingHandCursor);
+    QWidget *cardWidget = new QWidget();
+    // cardWidget->setFixedSize(200, 250);
+    cardWidget->setCursor(Qt::PointingHandCursor);
 
-    QVBoxLayout *cardLayout = new QVBoxLayout(cardFrame);
+    QHBoxLayout *cardLayout = new QHBoxLayout(cardWidget);
     cardLayout->setContentsMargins(15, 15, 15, 15);
     cardLayout->setSpacing(10);
 
@@ -301,24 +286,29 @@ void AppsWidget::createAppCard(const QString &name, const QString &bundleId,
                 iconLabel->setPixmap(rounded);
             }
         },
-        cardFrame);
+        cardWidget);
+
+    // Vertical layout for name and description
+    QVBoxLayout *textLayout = new QVBoxLayout();
 
     // App name
     QLabel *nameLabel = new QLabel(name);
-    nameLabel->setStyleSheet(
-        "font-size: 16px; font-weight: bold; color: #333;");
+    nameLabel->setStyleSheet("font-size: 16px;");
     nameLabel->setAlignment(Qt::AlignCenter);
     nameLabel->setWordWrap(true);
-    cardLayout->addWidget(nameLabel);
+    textLayout->addWidget(nameLabel);
 
     // App description
     QLabel *descLabel = new QLabel(description);
     descLabel->setStyleSheet("font-size: 12px; color: #666;");
     descLabel->setAlignment(Qt::AlignCenter);
     descLabel->setWordWrap(true);
-    cardLayout->addWidget(descLabel);
+    textLayout->addWidget(descLabel);
 
     cardLayout->addStretch();
+    cardLayout->addLayout(textLayout);
+
+    QVBoxLayout *buttonsLayout = new QVBoxLayout();
 
     // Install button placeholder
     QPushButton *installLabel = new QPushButton("Install");
@@ -336,15 +326,11 @@ void AppsWidget::createAppCard(const QString &name, const QString &bundleId,
     connect(downloadIpaLabel, &QPushButton::clicked, this,
             [this, name, bundleId]() { onDownloadIpaClicked(name, bundleId); });
 
-    cardLayout->addWidget(installLabel);
-    cardLayout->addWidget(downloadIpaLabel);
+    buttonsLayout->addWidget(installLabel);
+    buttonsLayout->addWidget(downloadIpaLabel);
 
-    // Make the entire card clickable
-    // cardFrame->mousePressEvent = [this, name, description](QMouseEvent *) {
-    //     onAppCardClicked(name, description);
-    // };
-
-    gridLayout->addWidget(cardFrame, row, col);
+    cardLayout->addLayout(buttonsLayout);
+    gridLayout->addWidget(cardWidget, row, col);
 }
 void AppsWidget::onDownloadIpaClicked(const QString &name,
                                       const QString &bundleId)

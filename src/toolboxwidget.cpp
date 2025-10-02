@@ -167,7 +167,6 @@ ClickableWidget *ToolboxWidget::createToolbox(iDescriptorTool tool,
 {
     ClickableWidget *b = new ClickableWidget();
     b->setStyleSheet("padding: 5px; border: none; outline: none;");
-    b->setFixedSize(200, 120);
 
     QVBoxLayout *layout = new QVBoxLayout(b);
 
@@ -235,15 +234,13 @@ ClickableWidget *ToolboxWidget::createToolbox(iDescriptorTool tool,
     }
     // Title
     QLabel *titleLabel = new QLabel(title);
-    titleLabel->setFont(QFont("Arial", 10, QFont::Bold));
     titleLabel->setAlignment(Qt::AlignCenter);
 
     // Description
     QLabel *descLabel = new QLabel(description);
-    descLabel->setFont(QFont("Arial", 8));
     descLabel->setWordWrap(true);
     descLabel->setAlignment(Qt::AlignCenter);
-    descLabel->setStyleSheet("color: #666;");
+    descLabel->setStyleSheet("color: #666; font-size: 12px;");
 
     layout->addWidget(iconLabel);
     layout->addWidget(titleLabel);

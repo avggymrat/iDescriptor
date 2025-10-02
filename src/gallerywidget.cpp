@@ -17,6 +17,7 @@
 #include <QVBoxLayout>
 #include <QtConcurrent/QtConcurrent>
 
+// todo: create a service
 QByteArray read_afc_file_to_byte_array(afc_client_t afcClient, const char *path)
 {
     uint64_t fd_handle = 0;

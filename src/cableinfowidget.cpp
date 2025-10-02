@@ -201,7 +201,8 @@ void CableInfoWidget::updateUI()
     QString statusText;
     QString statusStyle;
     QString iconText;
-
+    // todo: sometimes they fake the manufacturer even if it's not genuine
+    // compare m_cableInfo.isTypeC to the actual values we get from ioreg
     if (m_cableInfo.isGenuine) {
         statusText = QString("Genuine %1")
                          .arg(m_cableInfo.isTypeC ? "USB-C to Lightning Cable"

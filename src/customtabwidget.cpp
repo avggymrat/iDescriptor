@@ -8,93 +8,17 @@
 
 // CustomTab implementation
 CustomTab::CustomTab(const QString &text, QWidget *parent)
-    : QPushButton(text, parent), m_notificationLabel(nullptr),
-      m_notificationCount(0)
+    : QPushButton(text, parent)
 {
     setCheckable(true);
     setFixedHeight(54);
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-
-    // Set up notification label
-    m_notificationLabel = new QLabel(this);
-    m_notificationLabel->setAlignment(Qt::AlignCenter);
-    m_notificationLabel->hide();
-    m_notificationLabel->setStyleSheet("QLabel {"
-                                       "  background-color: #e6eef9;"
-                                       "  border-radius: 16px;"
-                                       "  color: #333;"
-                                       "  font-weight: 500;"
-                                       "  min-width: 32px;"
-                                       "  min-height: 32px;"
-                                       "  max-width: 32px;"
-                                       "  max-height: 32px;"
-                                       "}");
-
-    updateNotificationDisplay();
-}
-
-void CustomTab::setNotificationCount(int count)
-{
-    m_notificationCount = count;
-    updateNotificationDisplay();
 }
 
 void CustomTab::setIcon(const QIcon &icon)
 {
     QPushButton::setIcon(icon);
     setIconSize(QSize(20, 20));
-}
-
-void CustomTab::updateNotificationDisplay()
-{
-    if (m_notificationCount > 0) {
-        m_notificationLabel->setText(QString::number(m_notificationCount));
-        m_notificationLabel->show();
-
-        // Position notification label to the right of the text
-        QFontMetrics fm(font());
-        int textWidth = fm.horizontalAdvance(text());
-        int iconWidth = iconSize().width();
-        int totalContentWidth = (iconWidth > 0 ? iconWidth + 8 : 0) + textWidth;
-
-        int x = (width() - totalContentWidth) / 2 + totalContentWidth + 12;
-        int y = (height() - 32) / 2;
-
-        m_notificationLabel->setGeometry(x, y, 32, 32);
-    } else {
-        m_notificationLabel->hide();
-    }
-}
-
-void CustomTab::paintEvent(QPaintEvent *event)
-{
-    QPushButton::paintEvent(event);
-    updateNotificationDisplay();
-
-    // Update notification label style based on checked state
-    if (isChecked()) {
-        m_notificationLabel->setStyleSheet("QLabel {"
-                                           "  background-color: #185ee0;"
-                                           "  border-radius: 16px;"
-                                           "  color: white;"
-                                           "  font-weight: 500;"
-                                           "  min-width: 32px;"
-                                           "  min-height: 32px;"
-                                           "  max-width: 32px;"
-                                           "  max-height: 32px;"
-                                           "}");
-    } else {
-        m_notificationLabel->setStyleSheet("QLabel {"
-                                           "  background-color: #e6eef9;"
-                                           "  border-radius: 16px;"
-                                           "  color: #333;"
-                                           "  font-weight: 500;"
-                                           "  min-width: 32px;"
-                                           "  min-height: 32px;"
-                                           "  max-width: 32px;"
-                                           "  max-height: 32px;"
-                                           "}");
-    }
 }
 
 // CustomTabWidget implementation
@@ -115,7 +39,7 @@ CustomTabWidget::CustomTabWidget(QWidget *parent)
     // Style the tab bar
     m_tabBar->setStyleSheet("QWidget {"
                             // "  background-color: white;"
-                            "  border-radius: 35px;"
+                            // "  border-radius: 35px;"
                             "}");
 
     // Add drop shadow effect
@@ -142,7 +66,7 @@ void CustomTabWidget::setupGlider()
 {
     m_glider = new QWidget(m_tabBar);
     m_glider->setStyleSheet("QWidget {"
-                            "  background-color: #185ee0;"
+                            "  background-color: #2b5693;"
                             "  border-radius: 1px;"
                             "}");
     // Set initial size - will be updated in animateGlider
@@ -215,13 +139,6 @@ QWidget *CustomTabWidget::widget(int index) const
     return m_widgets[index];
 }
 
-void CustomTabWidget::setTabNotification(int index, int count)
-{
-    if (index >= 0 && index < m_tabs.count()) {
-        m_tabs[index]->setNotificationCount(count);
-    }
-}
-
 void CustomTabWidget::onTabClicked()
 {
     CustomTab *clickedTab = qobject_cast<CustomTab *>(sender());
@@ -268,11 +185,11 @@ void CustomTabWidget::updateTabStyles()
         if (tab->isChecked()) {
             tab->setStyleSheet("CustomTab {"
                                "  color: #185ee0;"
+                               //    "  color: #d7e1f4ff;"
                                "  font-weight: 500;"
                                "  font-size: 20px;"
                                "  border: none;"
                                "  outline: none;"
-                               "  border-radius: 27px;"
                                "  background-color: transparent;"
                                "}"
                                "CustomTab:hover {"
@@ -281,11 +198,11 @@ void CustomTabWidget::updateTabStyles()
         } else {
             tab->setStyleSheet("CustomTab {"
                                "  color: #666;"
+                               //    "  color: #2b5693;"
                                "  font-weight: 500;"
                                "  font-size: 20px;"
                                "  border: none;"
                                "  outline: none;"
-                               "  border-radius: 27px;"
                                "  background-color: transparent;"
                                "}"
                                "CustomTab:hover {"
@@ -306,26 +223,3 @@ void CustomTabWidget::resizeEvent(QResizeEvent *event)
         QTimer::singleShot(0, [this]() { animateGlider(m_currentIndex); });
     }
 }
-
-// #ifdef Q_OS_MAC
-// void CustomTabWidget::ensureTitlebarIntegration()
-// {
-//     // Ensure the tab bar maintains the correct height and margins for
-//     titlebar integration m_tabBar->setFixedHeight(98); // 70px + 28px
-//     titlebar height m_tabLayout->setContentsMargins(12, 36, 12, 8); // Add
-//     top margin for titlebar
-
-//     // Ensure the parent window attribute is maintained
-//     if (QMainWindow *mainWindow = qobject_cast<QMainWindow*>(window())) {
-//         mainWindow->setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea,
-//         false);
-//     }
-
-//     // Update glider position after titlebar integration changes
-//     if (m_currentIndex >= 0 && m_currentIndex < m_tabs.count()) {
-//         QTimer::singleShot(0, [this]() {
-//             animateGlider(m_currentIndex);
-//         });
-//     }
-// }
-// #endif

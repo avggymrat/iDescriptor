@@ -1,9 +1,10 @@
 #include "diskusagewidget.h"
+#include "diskusagebar.h"
 #include "iDescriptor.h"
+
 #include <QApplication>
 #include <QDebug>
 #include <QFutureWatcher>
-#include <QPainter>
 #include <QVariantMap>
 #include <QtConcurrent/QtConcurrent>
 
@@ -17,107 +18,283 @@ DiskUsageWidget::DiskUsageWidget(iDescriptorDevice *device, QWidget *parent)
       m_freeSpace(0)
 {
     setMinimumHeight(80);
+    setupUI();
     fetchData();
+}
+
+void DiskUsageWidget::setupUI()
+{
+    m_mainLayout = new QVBoxLayout(this);
+    m_mainLayout->setContentsMargins(0, 0, 0, 0);
+    m_mainLayout->setSpacing(0);
+
+    // Title
+    m_titleLabel = new QLabel("Disk Usage", this);
+    QFont titleFont = font();
+    titleFont.setBold(true);
+    m_titleLabel->setFont(titleFont);
+    m_titleLabel->setAlignment(Qt::AlignCenter);
+    m_mainLayout->addWidget(m_titleLabel);
+
+    // Status label (for loading/error states)
+    m_statusLabel = new QLabel(this);
+    m_statusLabel->setAlignment(Qt::AlignCenter);
+    m_statusLabel->setText("Loading disk usage...");
+    m_mainLayout->addWidget(m_statusLabel);
+
+    // Disk usage bar container
+    m_diskBarContainer = new QWidget(this);
+    m_diskBarContainer->setMinimumHeight(20);
+    m_diskBarContainer->setMaximumHeight(20);
+    m_diskBarContainer->setStyleSheet(
+        "QWidget#diskBarContainer { margin: 0; padding: 0; border: none; }");
+    m_diskBarContainer->setObjectName("diskBarContainer");
+    m_diskBarLayout = new QHBoxLayout(m_diskBarContainer);
+    m_diskBarLayout->setContentsMargins(0, 0, 0, 0);
+    m_diskBarLayout->setSpacing(0);
+
+// Create colored segments
+#ifdef Q_OS_MAC
+    m_systemBar = new DiskUsageBar();
+    m_appsBar = new DiskUsageBar();
+    m_mediaBar = new DiskUsageBar();
+    m_othersBar = new DiskUsageBar();
+    m_freeBar = new DiskUsageBar();
+#else
+    m_systemBar = new QWidget();
+    m_appsBar = new QWidget();
+    m_mediaBar = new QWidget();
+    m_othersBar = new QWidget();
+    m_freeBar = new QWidget();
+#endif
+    // Set size policies to prevent any extra spacing
+    // m_systemBar->setSizePolicy(QSizePolicy::Expanding,
+    // QSizePolicy::Expanding); m_appsBar->setSizePolicy(QSizePolicy::Expanding,
+    // QSizePolicy::Expanding);
+    // m_mediaBar->setSizePolicy(QSizePolicy::Expanding,
+    // QSizePolicy::Expanding);
+    // m_othersBar->setSizePolicy(QSizePolicy::Expanding,
+    // QSizePolicy::Expanding); m_freeBar->setSizePolicy(QSizePolicy::Expanding,
+    // QSizePolicy::Expanding);
+
+    // Set colors
+    m_systemBar->setStyleSheet(
+        "background-color: #a1384d; border: 1px solid"
+        "#e64a5b; padding: 0; margin: 0; border-top-left-radius: 3px; "
+        "border-bottom-left-radius: 3px;");
+    m_appsBar->setStyleSheet("background-color: #4f869f; border: 1px solid "
+                             "#63b4da; padding: 0; margin: 0;");
+    m_mediaBar->setStyleSheet(
+        "background-color: #2ECC71; border: none; padding: 0; margin: 0;");
+    m_othersBar->setStyleSheet("background-color: #a28729; border: 1px solid "
+                               "#c4a32d; padding: 0; margin: 0;");
+    m_freeBar->setStyleSheet(
+        "background-color: #474747; border: 1px solid "
+        "#4f4f4f; padding: 0; margin: 0; border-top-right-radius: 3px; "
+        "border-bottom-right-radius: 3px;");
+
+    m_diskBarLayout->addWidget(m_systemBar);
+    m_diskBarLayout->addWidget(m_appsBar);
+    m_diskBarLayout->addWidget(m_mediaBar);
+    m_diskBarLayout->addWidget(m_othersBar);
+    m_diskBarLayout->addWidget(m_freeBar);
+
+    m_diskBarContainer->hide(); // Initially hidden
+    m_mainLayout->addWidget(m_diskBarContainer);
+
+    // Legend layout
+    m_legendLayout = new QHBoxLayout();
+    m_legendLayout->setSpacing(0);
+    m_legendLayout->setContentsMargins(0, 0, 0, 0);
+
+    // Legend labels
+    m_systemLabel = new QLabel("System", this);
+    m_appsLabel = new QLabel("Apps", this);
+    m_mediaLabel = new QLabel("Media", this);
+    m_othersLabel = new QLabel("Others", this);
+    m_freeLabel = new QLabel("Free", this);
+
+    // Style legend labels with colored backgrounds
+    QString labelStyle = "QLabel { padding: 2px 6px; margin: 0px; "
+                         "border-radius: 3px; color: white; font-size: 10px; }";
+    m_systemLabel->setStyleSheet(labelStyle + "background-color: #a1384d;");
+    m_appsLabel->setStyleSheet(labelStyle + "background-color: #3498DB;");
+    m_mediaLabel->setStyleSheet(labelStyle + "background-color: #2ECC71;");
+    m_othersLabel->setStyleSheet(labelStyle + "background-color: #F39C12;");
+    m_freeLabel->setStyleSheet(labelStyle +
+                               "background-color: #BDC3C7; color: black;");
+
+    m_legendLayout->addWidget(m_systemLabel);
+    m_legendLayout->addWidget(m_appsLabel);
+    m_legendLayout->addWidget(m_mediaLabel);
+    m_legendLayout->addWidget(m_othersLabel);
+    m_legendLayout->addWidget(m_freeLabel);
+    m_legendLayout->addStretch();
+
+    // Hide legend initially
+    m_systemLabel->hide();
+    m_appsLabel->hide();
+    m_mediaLabel->hide();
+    m_othersLabel->hide();
+    m_freeLabel->hide();
+
+    m_mainLayout->addLayout(m_legendLayout);
 }
 
 QSize DiskUsageWidget::sizeHint() const { return QSize(400, 80); }
 
-void DiskUsageWidget::paintEvent(QPaintEvent *event)
+void DiskUsageWidget::updateUI()
 {
-    Q_UNUSED(event);
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
-    QColor textColor = qApp->palette().text().color();
-
     if (m_state == Loading) {
-        painter.setPen(textColor);
-        painter.drawText(rect(), Qt::AlignCenter, "Loading disk usage...");
+        m_statusLabel->setText("Loading disk usage...");
+        m_statusLabel->show();
+        m_diskBarContainer->hide();
+        m_systemLabel->hide();
+        m_appsLabel->hide();
+        m_mediaLabel->hide();
+        m_othersLabel->hide();
+        m_freeLabel->hide();
         return;
     }
 
     if (m_state == Error) {
-        painter.setPen(textColor);
-        painter.drawText(rect(), Qt::AlignCenter, "Error: " + m_errorMessage);
+        m_statusLabel->setText("Error: " + m_errorMessage);
+        m_statusLabel->show();
+        m_diskBarContainer->hide();
+        m_systemLabel->hide();
+        m_appsLabel->hide();
+        m_mediaLabel->hide();
+        m_othersLabel->hide();
+        m_freeLabel->hide();
         return;
     }
-
-    // Title
-    QFont titleFont = font();
-    titleFont.setBold(true);
-    painter.setFont(titleFont);
-    painter.setPen(textColor);
-    QRectF titleRect(0, 5, width(), 20);
-    painter.drawText(titleRect, Qt::AlignHCenter | Qt::AlignTop, "Disk Usage");
-    painter.setFont(font()); // Reset font
 
     if (m_totalCapacity == 0) {
-        painter.setPen(Qt::black);
-        painter.drawText(QRect(0, 30, width(), height() - 30), Qt::AlignCenter,
-                         "No disk information available.");
+        m_statusLabel->setText("No disk information available.");
+        m_statusLabel->show();
+        m_diskBarContainer->hide();
+        m_systemLabel->hide();
+        m_appsLabel->hide();
+        m_mediaLabel->hide();
+        m_othersLabel->hide();
+        m_freeLabel->hide();
         return;
     }
 
-    painter.setPen(Qt::NoPen);
+    // Hide status label and show disk bar and legend
+    m_statusLabel->hide();
+    m_diskBarContainer->show();
+    m_systemLabel->show();
+    m_appsLabel->show();
+    m_mediaLabel->show();
+    m_othersLabel->show();
+    m_freeLabel->show();
 
-    const int barHeight = 20;
-    QRectF barRect(10, 30, width() - 20, barHeight);
+    // Calculate proportions for each segment
+    int totalWidth = m_diskBarContainer->width();
 
-    double scale = (double)barRect.width() / m_totalCapacity;
-    double currentX = barRect.left();
+    int systemWidth =
+        (int)((double)m_systemUsage / m_totalCapacity * totalWidth);
+    int appsWidth = (int)((double)m_appsUsage / m_totalCapacity * totalWidth);
+    int mediaWidth = (int)((double)m_mediaUsage / m_totalCapacity * totalWidth);
+    int othersWidth =
+        (int)((double)m_othersUsage / m_totalCapacity * totalWidth);
+    int freeWidth = (int)((double)m_freeSpace / m_totalCapacity * totalWidth);
 
-    auto drawSegment = [&](uint64_t value, const QColor &color) {
-        if (value > 0) {
-            double segmentWidth = value * scale;
-            painter.fillRect(
-                QRectF(currentX, barRect.top(), segmentWidth, barRect.height()),
-                color);
-            currentX += segmentWidth;
+    // Ensure at least 1 pixel width for non-zero values
+    if (m_systemUsage > 0 && systemWidth == 0)
+        systemWidth = 1;
+    if (m_appsUsage > 0 && appsWidth == 0)
+        appsWidth = 1;
+    if (m_mediaUsage > 0 && mediaWidth == 0)
+        mediaWidth = 1;
+    if (m_othersUsage > 0 && othersWidth == 0)
+        othersWidth = 1;
+    if (m_freeSpace > 0 && freeWidth == 0)
+        freeWidth = 1;
+
+    m_diskBarLayout->setStretchFactor(m_systemBar, systemWidth);
+    m_diskBarLayout->setStretchFactor(m_appsBar, appsWidth);
+    m_diskBarLayout->setStretchFactor(m_mediaBar, mediaWidth);
+    m_diskBarLayout->setStretchFactor(m_othersBar, othersWidth);
+    m_diskBarLayout->setStretchFactor(m_freeBar, freeWidth);
+
+    // Hide segments with zero usage
+    // m_systemBar->setVisible(m_systemUsage > 0);
+    // m_appsBar->setVisible(m_appsUsage > 0);
+    // m_mediaBar->setVisible(m_mediaUsage > 0);
+    // m_othersBar->setVisible(m_othersUsage > 0);
+    // m_freeBar->setVisible(m_freeSpace > 0);
+
+    // Format sizes for display
+    auto formatSize = [](uint64_t bytes) -> QString {
+        const char *units[] = {"B", "KB", "MB", "GB", "TB"};
+        int unitIndex = 0;
+        double size = bytes;
+
+        while (size >= 1024 && unitIndex < 4) {
+            size /= 1024;
+            unitIndex++;
         }
+
+        return QString("%1 %2")
+            .arg(QString::number(size, 'f', 1))
+            .arg(units[unitIndex]);
     };
 
-    const QColor systemColor("#E74C3C");
-    const QColor appsColor("#3498DB");
-    const QColor mediaColor("#2ECC71");
-    const QColor othersColor("#F39C12");
-    const QColor freeColor("#BDC3C7");
+    // Update legend labels with sizes
+    m_systemLabel->setText(
+        QString("System (%1)").arg(formatSize(m_systemUsage)));
+    m_appsLabel->setText(QString("Apps (%1)").arg(formatSize(m_appsUsage)));
+    m_mediaLabel->setText(QString("Media (%1)").arg(formatSize(m_mediaUsage)));
+    m_othersLabel->setText(
+        QString("Others (%1)").arg(formatSize(m_othersUsage)));
+    m_freeLabel->setText(QString("Free (%1)").arg(formatSize(m_freeSpace)));
 
-    // System
-    drawSegment(m_systemUsage, systemColor);
-    // Apps
-    drawSegment(m_appsUsage, appsColor);
-    // Media
-    drawSegment(m_mediaUsage, mediaColor);
-    // Others
-    drawSegment(m_othersUsage, othersColor);
-    // Free
-    drawSegment(m_freeSpace, freeColor);
+    qDebug() << "Disk Usage Updated:"
+             << "System:" << m_systemUsage << "Apps:" << m_appsUsage
+             << "Media:" << m_mediaUsage << "Others:" << m_othersUsage
+             << "Free:" << m_freeSpace;
 
-    // Legend
-    painter.setPen(textColor);
-    qreal legendY = barRect.bottom() + 15;
-    const int legendBoxSize = 10;
-    const int legendSpacing = 5;
-    qreal currentLegendX = barRect.left();
+    // Set stretch factors and ensure minimum visibility
+    int systemStretch = std::max(
+        1, (int)(m_systemUsage / 1000000)); // Convert to MB for stretch
+    int appsStretch = std::max(1, (int)(m_appsUsage / 1000000));
+    int mediaStretch = std::max(1, (int)(m_mediaUsage / 1000000));
+    int othersStretch = std::max(1, (int)(m_othersUsage / 1000000));
+    int freeStretch = std::max(1, (int)(m_freeSpace / 1000000));
 
-    auto drawLegendItem = [&](const QColor &color, const QString &text) {
-        painter.fillRect(
-            QRectF(currentLegendX, legendY, legendBoxSize, legendBoxSize),
-            color);
-        currentLegendX += legendBoxSize + legendSpacing;
-        painter.setPen(textColor);
+    m_diskBarLayout->setStretchFactor(m_systemBar, systemStretch);
+    m_diskBarLayout->setStretchFactor(m_appsBar, appsStretch);
+    m_diskBarLayout->setStretchFactor(m_mediaBar, mediaStretch);
+    m_diskBarLayout->setStretchFactor(m_othersBar, othersStretch);
+    m_diskBarLayout->setStretchFactor(m_freeBar, freeStretch);
 
-        QFontMetrics fm(font());
-        QRect textRect = fm.boundingRect(text);
-        painter.drawText(QPointF(currentLegendX, legendY + legendBoxSize),
-                         text);
-        currentLegendX += textRect.width() + legendSpacing * 2;
-    };
+    // Set usage info for popovers
+#ifdef Q_OS_MAC
+    m_systemBar->setUsageInfo("System", formatSize(m_systemUsage), "#a1384d",
+                              (double)m_systemUsage / m_totalCapacity);
+    m_appsBar->setUsageInfo("Apps", formatSize(m_appsUsage), "#3498DB",
+                            (double)m_appsUsage / m_totalCapacity);
+    m_mediaBar->setUsageInfo("Media", formatSize(m_mediaUsage), "#2ECC71",
+                             (double)m_mediaUsage / m_totalCapacity);
+    m_othersBar->setUsageInfo("Others", formatSize(m_othersUsage), "#F39C12",
+                              (double)m_othersUsage / m_totalCapacity);
+    m_freeBar->setUsageInfo("Free", formatSize(m_freeSpace), "#BDC3C7",
+                            (double)m_freeSpace / m_totalCapacity);
+#endif
+    // Hide segments with zero usage
+    // m_systemBar->setVisible(m_systemUsage > 0);
+    // m_appsBar->setVisible(m_appsUsage > 0);
+    // m_mediaBar->setVisible(m_mediaUsage > 0);
+    // m_othersBar->setVisible(m_othersUsage > 0);
+    // m_freeBar->setVisible(m_freeSpace > 0);
+}
 
-    drawLegendItem(systemColor, "System");
-    drawLegendItem(appsColor, "Apps");
-    drawLegendItem(mediaColor, "Media");
-    drawLegendItem(othersColor, "Others");
-    drawLegendItem(freeColor, "Free");
+void DiskUsageWidget::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event);
+    // No custom painting needed - using widgets and layouts
 }
 
 void DiskUsageWidget::fetchData()
@@ -147,7 +324,7 @@ void DiskUsageWidget::fetchData()
 
                     m_state = Ready;
                 }
-                update(); // Trigger repaint
+                updateUI(); // Update the UI instead of triggering repaint
                 watcher->deleteLater();
             });
 

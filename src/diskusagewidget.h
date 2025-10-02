@@ -1,7 +1,12 @@
 #ifndef DISKUSAGEWIDGET_H
 #define DISKUSAGEWIDGET_H
+#include "diskusagebar.h"
 #include "iDescriptor.h"
 
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QProgressBar>
+#include <QVBoxLayout>
 #include <QWidget>
 #include <cstdint>
 
@@ -18,12 +23,41 @@ protected:
 
 private:
     void fetchData();
+    void setupUI();
+    void updateUI();
 
     enum State { Loading, Ready, Error };
 
     iDescriptorDevice *m_device;
     State m_state;
     QString m_errorMessage;
+
+    // UI widgets
+    QVBoxLayout *m_mainLayout;
+    QLabel *m_titleLabel;
+    QLabel *m_statusLabel;
+    QWidget *m_diskBarContainer;
+    QHBoxLayout *m_diskBarLayout;
+#ifdef Q_OS_MAC
+    DiskUsageBar *m_systemBar;
+    DiskUsageBar *m_appsBar;
+    DiskUsageBar *m_mediaBar;
+    DiskUsageBar *m_othersBar;
+    DiskUsageBar *m_freeBar;
+#else
+    QWidget *m_systemBar;
+    QWidget *m_appsBar;
+    QWidget *m_mediaBar;
+    QWidget *m_othersBar;
+    QWidget *m_freeBar;
+#endif
+
+    QHBoxLayout *m_legendLayout;
+    QLabel *m_systemLabel;
+    QLabel *m_appsLabel;
+    QLabel *m_mediaLabel;
+    QLabel *m_othersLabel;
+    QLabel *m_freeLabel;
 
     uint64_t m_totalCapacity;
     uint64_t m_systemUsage;

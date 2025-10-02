@@ -4,6 +4,10 @@
 #include <QMouseEvent>
 #include <QWidget>
 
+#ifdef Q_OS_MAC
+#include "./platform/macos.h"
+#endif
+
 #define COLOR_GREEN QColor(0, 180, 0)    // Green
 #define COLOR_ORANGE QColor(255, 140, 0) // Orange
 #define COLOR_RED QColor(255, 0, 0)      // Red
@@ -49,10 +53,6 @@ protected:
         QWidget::mouseReleaseEvent(event);
     }
 };
-
-#ifdef Q_OS_MAC
-void setupMacOSWindow(QMainWindow *window);
-#endif
 
 enum class iDescriptorTool {
     Airplayer,

@@ -8,6 +8,7 @@
 #include <QDebug>
 #include <QGraphicsDropShadowEffect>
 #include <QGraphicsPixmapItem>
+#include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -30,19 +31,18 @@ DeviceInfoWidget::DeviceInfoWidget(iDescriptorDevice *device, QWidget *parent)
     QHBoxLayout *mainLayout = new QHBoxLayout(this);
     mainLayout->setContentsMargins(2, 2, 2, 2);
     mainLayout->setSpacing(2);
-
-    QGraphicsScene *scene = new QGraphicsScene(this);
+    m_graphicsScene = new QGraphicsScene(this); // no parent
     QGraphicsPixmapItem *pixmapItem =
         new QGraphicsPixmapItem(QPixmap(":/resources/iphone.png"));
-    scene->addItem(pixmapItem);
+    m_graphicsScene->addItem(pixmapItem);
 
-    QGraphicsView *graphicsView = new ResponsiveGraphicsView(scene, this);
-    graphicsView->setRenderHint(QPainter::Antialiasing);
-    graphicsView->setMinimumWidth(200);
-    graphicsView->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
-    graphicsView->setStyleSheet("background: transparent; border: none;");
+    m_graphicsView = new ResponsiveGraphicsView(m_graphicsScene, this);
+    m_graphicsView->setRenderHint(QPainter::Antialiasing);
+    m_graphicsView->setMinimumWidth(200);
+    m_graphicsView->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+    m_graphicsView->setStyleSheet("background: transparent; border: none;");
 
-    mainLayout->addWidget(graphicsView, 1); // Stretch factor 1
+    mainLayout->addWidget(m_graphicsView, 1); // Stretch factor 1
 
     // Right side: Info Table
     QWidget *infoContainer = new QWidget();
@@ -161,6 +161,8 @@ DeviceInfoWidget::DeviceInfoWidget(iDescriptorDevice *device, QWidget *parent)
                               "    background-color: " +
                               background.name() +
                               ";"
+                              //   "    background-color: #161d37;"
+                              //   "    border: 1px solid #29356b;"
                               "    border-radius: 8px;"
                               "}");
 
@@ -315,6 +317,15 @@ DeviceInfoWidget::DeviceInfoWidget(iDescriptorDevice *device, QWidget *parent)
     connect(m_updateTimer, &QTimer::timeout, this,
             &DeviceInfoWidget::updateBatteryInfo);
     m_updateTimer->start(30000); // Update every 30 seconds
+}
+
+DeviceInfoWidget::~DeviceInfoWidget()
+{
+    if (m_graphicsView) {
+        m_graphicsView->setScene(
+            nullptr); // prevents QGraphicsScene from calling into view during
+                      // its destructor only needed on macos ?
+    }
 }
 
 void DeviceInfoWidget::onBatteryMoreClicked()

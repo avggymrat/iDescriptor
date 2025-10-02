@@ -17,16 +17,7 @@ class CustomTab : public QPushButton
 
 public:
     explicit CustomTab(const QString &text, QWidget *parent = nullptr);
-    void setNotificationCount(int count);
     void setIcon(const QIcon &icon);
-
-private:
-    QLabel *m_notificationLabel;
-    int m_notificationCount;
-    void updateNotificationDisplay();
-
-protected:
-    void paintEvent(QPaintEvent *event) override;
 };
 
 class CustomTabWidget : public QWidget
@@ -41,7 +32,6 @@ public:
     void setCurrentIndex(int index);
     int currentIndex() const;
     QWidget *widget(int index) const;
-    void setTabNotification(int index, int count);
 
 signals:
     void currentChanged(int index);

@@ -39,7 +39,7 @@ MediaPreviewDialog::MediaPreviewDialog(iDescriptorDevice *device,
       m_fitToWindowBtn(nullptr), m_zoomFactor(1.0), m_isRepeatEnabled(true),
       m_isDraggingTimeline(false), m_videoDuration(0)
 {
-    setWindowTitle(QFileInfo(filePath).fileName());
+    setWindowTitle(QFileInfo(filePath).fileName() + " - iDescriptor");
 
     // Make dialog fullscreen
     setWindowState(Qt::WindowMaximized);
@@ -88,9 +88,13 @@ void MediaPreviewDialog::setupUI()
     }
 
     // Status bar
+    // more margin because of border radius on macOS
     m_statusLabel = new QLabel(this);
-    m_statusLabel->setStyleSheet(
-        "QLabel { background: #f0f0f0; padding: 5px; font-size: 12px; }");
+#ifdef Q_OS_MAC
+    m_statusLabel->setStyleSheet("QLabel { margin-left: 15px; }");
+#else
+    m_statusLabel->setStyleSheet("QLabel { margin-left: 5px; }");
+#endif
     m_mainLayout->addWidget(m_statusLabel);
 }
 
