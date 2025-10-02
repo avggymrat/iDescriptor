@@ -1,5 +1,6 @@
 #include "logindialog.h"
-#include "libipatool-go.h"
+#include "appstoremanager.h"
+#include "qprocessindicator.h"
 #include <QApplication>
 #include <QDialogButtonBox>
 #include <QInputDialog>
@@ -9,28 +10,6 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QtConcurrent/QtConcurrent>
-
-// 2FA callback for login
-static char *getAuthCodeCallback()
-{
-    static QByteArray buffer;
-    QString code;
-    QMetaObject::invokeMethod(
-        qApp,
-        [&]() {
-            bool ok;
-            code = QInputDialog::getText(
-                nullptr, "Two-Factor Authentication",
-                "Enter the 2FA code:", QLineEdit::Normal, QString(), &ok);
-        },
-        Qt::BlockingQueuedConnection);
-
-    if (code.isEmpty()) {
-        return nullptr;
-    }
-    buffer = code.toUtf8();
-    return buffer.data();
-}
 
 LoginDialog::LoginDialog(QWidget *parent) : QDialog(parent)
 {
@@ -42,13 +21,6 @@ LoginDialog::LoginDialog(QWidget *parent) : QDialog(parent)
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->setSpacing(15);
     layout->setContentsMargins(20, 20, 20, 20);
-
-    // Title
-    QLabel *titleLabel = new QLabel("Sign in to continue");
-    titleLabel->setStyleSheet(
-        "font-size: 18px; font-weight: bold; color: #333;");
-    titleLabel->setAlignment(Qt::AlignCenter);
-    layout->addWidget(titleLabel);
 
     // Email
     QLabel *emailLabel = new QLabel("Email:");
@@ -73,24 +45,66 @@ LoginDialog::LoginDialog(QWidget *parent) : QDialog(parent)
                                   "border-radius: 4px; font-size: 14px;");
     layout->addWidget(m_passwordEdit);
 
-    // Buttons
-    QDialogButtonBox *buttonBox =
-        new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    buttonBox->button(QDialogButtonBox::Ok)->setText("Sign In");
-    buttonBox->setStyleSheet(
+    // Description
+    QLabel *descriptionLabel =
+        new QLabel("Don't worry, your credentials won't be "
+                   "stored, shared anywhere. This App is open-source.");
+    descriptionLabel->setStyleSheet("font-size: 10px; font-weight: bold;");
+    descriptionLabel->setAlignment(Qt::AlignLeft);
+    descriptionLabel->setWordWrap(true); // Add this line
+    layout->addWidget(descriptionLabel);
+
+    // --- Buttons and Indicator ---
+    // Create a container widget for the sign-in button and the indicator
+    QWidget *signInContainer = new QWidget(this);
+    m_signInStackedLayout = new QStackedLayout(signInContainer);
+    m_signInStackedLayout->setContentsMargins(0, 0, 0, 0);
+
+    // Create the actual "Sign In" button
+    m_signInButton = new QPushButton("Sign In");
+    m_signInButton->setStyleSheet(
         "QPushButton { padding: 8px 16px; font-size: 14px; border-radius: 4px; "
-        "}"
-        "QPushButton[text='Sign In'] { background-color: #007AFF; color: "
-        "white; border: none; }"
-        "QPushButton[text='Sign In']:hover { background-color: #0056CC; }"
-        "QPushButton[text='Cancel'] { background-color: #f0f0f0; color: #333; "
-        "border: 1px solid #ddd; }");
+        "background-color: #007AFF; color: white; border: none; min-width: "
+        "80px; }"
+        "QPushButton:hover { background-color: #0056CC; }");
 
-    connect(buttonBox, &QDialogButtonBox::accepted, this, &LoginDialog::signIn);
-    // connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
-    connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    // Create the indicator
+    QWidget *indicatorWidget = new QWidget();
+    QVBoxLayout *indicatorLayout = new QVBoxLayout(indicatorWidget);
+    indicatorLayout->setContentsMargins(0, 0, 0, 0);
+    indicatorLayout->setAlignment(Qt::AlignCenter);
+    m_indicator = new QProcessIndicator(this);
+    m_indicator->setType(QProcessIndicator::line_rotate);
+    m_indicator->setFixedSize(48, 24);
+    indicatorLayout->addWidget(m_indicator);
 
-    layout->addWidget(buttonBox);
+    // Add button and indicator to the stacked layout
+    m_signInStackedLayout->addWidget(m_signInButton);
+    m_signInStackedLayout->addWidget(indicatorWidget);
+
+    // Ensure the container has the same size as the button
+    signInContainer->setFixedSize(m_signInButton->sizeHint());
+
+    // Create the "Cancel" button
+    m_cancelButton = new QPushButton("Cancel");
+    // add disabled style to cancel button
+    m_cancelButton->setStyleSheet(
+        "QPushButton { padding: 8px 16px; font-size: 14px; border-radius: 4px; "
+        "background-color: #f0f0f0; color: #333; border: 1px solid #ddd; "
+        "min-width: 80px; }"
+        "QPushButton:disabled { background-color: #eee; color: #aaa; border: "
+        "1px solid #ddd; }");
+
+    // Layout for the buttons
+    QHBoxLayout *buttonLayout = new QHBoxLayout();
+    buttonLayout->addStretch();
+    buttonLayout->addWidget(m_cancelButton);
+    buttonLayout->addWidget(signInContainer);
+
+    connect(m_signInButton, &QPushButton::clicked, this, &LoginDialog::signIn);
+    connect(m_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
+
+    layout->addLayout(buttonLayout);
 }
 
 QString LoginDialog::getEmail() const { return m_emailEdit->text(); }
@@ -105,37 +119,33 @@ void LoginDialog::signIn()
                              "Email and password cannot be empty.");
         return;
     }
-    QFuture<int> f = QtConcurrent::run([email, password]() {
-        return IpaToolLoginWithCallback(email.toUtf8().data(),
-                                        password.toUtf8().data(),
-                                        getAuthCodeCallback);
-    });
 
-    QFutureWatcher<int> *watcher = new QFutureWatcher<int>(this);
-    connect(watcher, &QFutureWatcher<int>::finished, this, [this, watcher]() {
-        int result = watcher->future().result();
-        if (result == 0) {
-            accept();
-        } else {
-            QMessageBox::warning(
-                this, "Login Failed",
-                "Login failed. Please check your credentials and 2FA code.");
-        }
-        watcher->deleteLater();
-    });
-    // int result = IpaToolLoginWithCallback(
-    //     email.toUtf8().data(), password.toUtf8().data(),
-    //     getAuthCodeCallback);
-    // if (result == 0) {
-    //     accept();
-    //     // m_isLoggedIn = true;
-    //     // m_loginButton->setText("Sign Out");
-    //     // m_statusLabel->setText("Signed in as " + email);
-    // } else {
-    //     QMessageBox::warning(
-    //         this, "Login Failed",
-    //         "Login failed. Please check your credentials and 2FA code.");
-    // }
+    AppStoreManager *manager = AppStoreManager::sharedInstance();
+    if (!manager) {
+        QMessageBox::critical(this, "Error",
+                              "Failed to initialize App Store manager.");
+        return;
+    }
 
-    // Perform login logic here
+    // Show indicator and disable cancel button
+    m_signInStackedLayout->setCurrentIndex(1);
+    m_indicator->start();
+    m_cancelButton->setEnabled(false);
+
+    manager->loginWithCallback(
+        email, password, [this](bool success, const QJsonObject &accountInfo) {
+            // Hide indicator and re-enable buttons
+            m_indicator->stop();
+            m_signInStackedLayout->setCurrentIndex(0);
+            m_cancelButton->setEnabled(true);
+
+            if (success) {
+                qDebug() << "Login successful";
+                accept();
+            } else {
+                QMessageBox::warning(this, "Login Failed",
+                                     "Login failed. Please check your "
+                                     "credentials and 2FA code.");
+            }
+        });
 }

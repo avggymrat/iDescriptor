@@ -3,7 +3,7 @@
 #include "appdownloadbasedialog.h"
 #include "appdownloaddialog.h"
 #include "appinstalldialog.h"
-#include "libipatool-go.h"
+#include "appstoremanager.h"
 #include "logindialog.h"
 #include <QAction>
 #include <QApplication>
@@ -42,7 +42,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QtConcurrent/QtConcurrent>
-
+// watch for login and logout events
 AppsWidget::AppsWidget(QWidget *parent) : QWidget(parent), m_isLoggedIn(false)
 {
     // m_searchProcess = new QProcess(this);
@@ -74,54 +74,20 @@ void AppsWidget::setupUI()
     m_statusLabel->setStyleSheet("margin-right: 20px;");
 
     // --- Status and Login Button ---
-    // TODO: need a singleton for IpaTool
-    int init_result = IpaToolInitialize();
-    if (init_result != 0) {
-        qDebug() << "IpaToolInitialize failed with error code:" << init_result;
+    m_manager = AppStoreManager::sharedInstance();
+    if (!m_manager) {
+        qDebug() << "AppStoreManager failed to initialize";
         m_statusLabel->setText("Failed to initialize");
+        m_loginButton = new QPushButton("Failed to initialize");
+        m_loginButton->setEnabled(false);
+        m_loginButton->setStyleSheet(
+            "background-color: #ccc; color: #666; border: none; border-radius: "
+            "4px; padding: 8px 16px; font-size: 14px;");
     } else {
-        qDebug() << "IpaToolInitialize succeeded";
-        char *accountInfoCStr = IpaToolGetAccountInfo();
-        if (accountInfoCStr) {
-            QString jsonAccountInfo(accountInfoCStr);
-            free(accountInfoCStr);
-
-            qDebug() << "Account info JSON:" << jsonAccountInfo;
-
-            QJsonParseError parseError;
-            QJsonDocument doc = QJsonDocument::fromJson(
-                QByteArray(jsonAccountInfo.toUtf8()), &parseError);
-
-            if (parseError.error == QJsonParseError::NoError &&
-                doc.isObject()) {
-                QJsonObject jsonObj = doc.object();
-
-                if (jsonObj.contains("success") &&
-                    jsonObj.value("success").toBool()) {
-                    if (jsonObj.contains("email")) {
-                        QString email = jsonObj.value("email").toString();
-                        m_statusLabel->setText("Signed in as " + email);
-                        m_isLoggedIn = true;
-                    } else {
-                        m_statusLabel->setText("Not signed in");
-                    }
-                } else {
-                    m_statusLabel->setText("Not signed in");
-                }
-            } else {
-                qDebug() << "JSON parse error:" << parseError.errorString();
-                m_statusLabel->setText("Not signed in");
-            }
-        } else {
-            m_statusLabel->setText("Not signed in");
-        }
+        onAppStoreInitialized(m_manager->getAccountInfo());
     }
-    m_statusLabel->setStyleSheet("font-size: 14px; color: #666;");
 
-    m_loginButton = new QPushButton(m_isLoggedIn ? "Sign Out" : "Sign In");
-    m_loginButton->setStyleSheet(
-        "background-color: #007AFF; color: white; border: none; border-radius: "
-        "4px; padding: 8px 16px; font-size: 14px;");
+    m_statusLabel->setStyleSheet("font-size: 14px; color: #666;");
 
     mainLayout->addWidget(headerWidget);
 
@@ -168,7 +134,6 @@ void AppsWidget::setupUI()
 
     m_scrollArea->setWidget(m_contentWidget);
     mainLayout->addWidget(m_scrollArea);
-
     // Connections
     connect(m_loginButton, &QPushButton::clicked, this,
             &AppsWidget::onLoginClicked);
@@ -179,6 +144,34 @@ void AppsWidget::setupUI()
             &AppsWidget::performSearch);
     connect(m_searchWatcher, &QFutureWatcher<QString>::finished, this,
             &AppsWidget::onSearchFinished);
+    connect(m_manager, &AppStoreManager::loginSuccessful, this,
+            &AppsWidget::onAppStoreInitialized);
+    connect(m_manager, &AppStoreManager::loggedOut, this,
+            &AppsWidget::onAppStoreInitialized);
+}
+
+void AppsWidget::onAppStoreInitialized(const QJsonObject &accountInfo)
+{
+    qDebug() << "AppStoreManager initialized successfully";
+
+    if (accountInfo.contains("success") &&
+        accountInfo.value("success").toBool()) {
+        if (accountInfo.contains("email")) {
+            QString email = accountInfo.value("email").toString();
+            m_statusLabel->setText("Signed in as " + email);
+            m_isLoggedIn = true;
+        } else {
+            m_statusLabel->setText("Not signed in");
+        }
+    } else {
+        m_statusLabel->setText("Not signed in");
+    }
+
+    m_loginButton = new QPushButton(m_isLoggedIn ? "Sign Out" : "Sign In");
+    m_loginButton->setStyleSheet(
+        "background-color: #007AFF; color: white; border: none; "
+        "border-radius: "
+        "4px; padding: 8px 16px; font-size: 14px;");
 }
 
 void AppsWidget::populateDefaultApps()
@@ -343,17 +336,34 @@ void AppsWidget::onDownloadIpaClicked(const QString &name,
 void AppsWidget::onLoginClicked()
 {
     if (m_isLoggedIn) {
-        IpaToolRevokeCredentials();
+        AppStoreManager *manager = AppStoreManager::sharedInstance();
+        if (manager) {
+            manager->revokeCredentials();
+        }
         m_isLoggedIn = false;
         m_loginButton->setText("Sign In");
         m_statusLabel->setText("Not signed in");
+        m_searchEdit->setPlaceholderText("Sign in to search");
         return;
     }
 
     LoginDialog dialog(this);
     if (dialog.exec() == QDialog::Accepted) {
-        QString email = dialog.getEmail();
-        QString password = dialog.getPassword();
+        // Login was successful, update UI
+        AppStoreManager *manager = AppStoreManager::sharedInstance();
+        if (manager) {
+            QJsonObject accountInfo = manager->getAccountInfo();
+            if (accountInfo.contains("success") &&
+                accountInfo.value("success").toBool()) {
+                if (accountInfo.contains("email")) {
+                    QString email = accountInfo.value("email").toString();
+                    m_statusLabel->setText("Signed in as " + email);
+                    m_isLoggedIn = true;
+                    m_loginButton->setText("Sign Out");
+                    m_searchEdit->setPlaceholderText("Search for apps...");
+                }
+            }
+        }
     }
 }
 
@@ -387,17 +397,73 @@ void AppsWidget::performSearch()
 
     showStatusMessage(QString("Searching for \"%1\"...").arg(searchTerm));
 
-    auto searchFn = [searchTerm]() -> QString {
-        char *resultsCStr = IpaToolSearch(searchTerm.toUtf8().data(), 20);
-        qDebug() << "Search results C string:" << resultsCStr;
-        if (!resultsCStr) {
-            return QString();
-        }
-        QString results(resultsCStr);
-        free(resultsCStr);
-        return results;
-    };
-    m_searchWatcher->setFuture(QtConcurrent::run(searchFn));
+    AppStoreManager *manager = AppStoreManager::sharedInstance();
+    if (!manager) {
+        showStatusMessage("Failed to initialize App Store manager.");
+        return;
+    }
+
+    manager->searchApps(
+        searchTerm, 20, [this](bool success, const QString &results) {
+            if (!success || results.isEmpty()) {
+                showStatusMessage("No apps found or search failed.");
+                return;
+            }
+
+            QJsonParseError parseError;
+            QJsonDocument doc =
+                QJsonDocument::fromJson(results.toUtf8(), &parseError);
+
+            if (parseError.error != QJsonParseError::NoError) {
+                qDebug() << "JSON parse error:" << parseError.errorString()
+                         << " on output: " << results;
+                showStatusMessage("Failed to parse search results.");
+                return;
+            }
+
+            QJsonObject rootObj = doc.object();
+            if (!rootObj.value("success").toBool()) {
+                QString errorMessage =
+                    rootObj.value("error").toString("Unknown search error.");
+                showStatusMessage(
+                    QString("Search error: %1").arg(errorMessage));
+                return;
+            }
+
+            QJsonArray resultsArray = rootObj.value("results").toArray();
+            if (resultsArray.isEmpty()) {
+                showStatusMessage("No apps found.");
+                return;
+            }
+
+            clearAppGrid();
+            QGridLayout *gridLayout =
+                qobject_cast<QGridLayout *>(m_contentWidget->layout());
+            if (!gridLayout)
+                return;
+
+            int row = 0;
+            int col = 0;
+            const int maxCols = 3;
+
+            for (const QJsonValue &appValue : resultsArray) {
+                QJsonObject appObj = appValue.toObject();
+                QString name = appObj.value("trackName").toString();
+                QString bundleId = appObj.value("bundleId").toString();
+                QString description =
+                    "Version: " + appObj.value("version").toString();
+
+                createAppCard(name, bundleId, description, "", gridLayout, row,
+                              col);
+
+                col++;
+                if (col >= maxCols) {
+                    col = 0;
+                    row++;
+                }
+            }
+            gridLayout->setRowStretch(gridLayout->rowCount(), 1);
+        });
 }
 
 void AppsWidget::onSearchFinished()

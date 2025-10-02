@@ -1,3 +1,4 @@
+#ifdef Q_OS_MACOS
 #include "diskusagebar.h"
 #include "platform/macos.h"
 
@@ -62,3 +63,4 @@ void DiskUsageBar::showPopover()
 
     showPopoverForBarWidget(this, info);
 }
+#endif

@@ -5,6 +5,7 @@
 #include <QFileDialog>
 #include <QLabel>
 #include <QPushButton>
+#include <QStandardPaths>
 #include <QVBoxLayout>
 
 AppDownloadDialog::AppDownloadDialog(const QString &appName,
@@ -12,7 +13,9 @@ AppDownloadDialog::AppDownloadDialog(const QString &appName,
                                      const QString &description,
                                      QWidget *parent)
     : AppDownloadBaseDialog(appName, parent),
-      m_outputDir(QDir::homePath().append("/Downloads")), m_bundleId(bundleId)
+      m_outputDir(
+          QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)),
+      m_bundleId(bundleId)
 {
     setWindowTitle("Download " + appName + " IPA");
     setModal(true);

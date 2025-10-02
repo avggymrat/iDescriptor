@@ -1,6 +1,7 @@
 #ifndef APPSWIDGET_H
 #define APPSWIDGET_H
 
+#include "appstoremanager.h"
 #include <QComboBox>
 #include <QDialog>
 #include <QFile>
@@ -31,6 +32,7 @@ private slots:
     void onSearchTextChanged();
     void performSearch();
     void onSearchFinished();
+    void onAppStoreInitialized(const QJsonObject &accountInfo);
 
 private:
     void setupUI();
@@ -46,6 +48,7 @@ private:
     QPushButton *m_loginButton;
     QLabel *m_statusLabel;
     bool m_isLoggedIn;
+    AppStoreManager *m_manager;
 
     // Search
     QLineEdit *m_searchEdit;

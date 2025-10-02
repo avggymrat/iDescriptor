@@ -1,3 +1,5 @@
+#ifdef Q_OS_MACOS
+
 #ifndef DISKUSAGEBAR_H
 #define DISKUSAGEBAR_H
 
@@ -30,3 +32,5 @@ private:
 };
 
 #endif // DISKUSAGEBAR_H
+
+#endif // Q_OS_MACOS
