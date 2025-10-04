@@ -32,8 +32,19 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Svg SvgWidgets Mu
 # Add QTermWidget
 pkg_check_modules(QTERMWIDGET REQUIRED IMPORTED_TARGET qtermwidget6)
 
+
 # Add Avahi for network device discovery
-pkg_check_modules(AVAHI_CLIENT REQUIRED IMPORTED_TARGET avahi-client)
+if (APPLE)
+    # On macOS, use the built-in Bonjour framework instead of Avahi
+    find_library(CORE_SERVICES_FRAMEWORK CoreServices REQUIRED)
+    add_definitions(-DUSE_DNS_SD)
+    message(STATUS "Using macOS Bonjour framework for network service discovery")
+else()
+    # On Linux and Windows, use Avahi
+    add_definitions(-DUSE_AVAHI)
+    message(STATUS "Using Avahi for network service discovery")
+    pkg_check_modules(AVAHI_CLIENT REQUIRED IMPORTED_TARGET avahi-client)
+endif()
 
 # pkg_check_modules(AVAHI_CLIENT REQUIRED IMPORTED_TARGET avahi-client)
 # pkg_check_modules(AVAHI_COMMON REQUIRED IMPORTED_TARGET avahi-common)
@@ -161,6 +172,15 @@ resources.qrc
 if(APPLE)
     list(APPEND PROJECT_SOURCES
         src/platform/macos.mm
+        src/core/services/dnssd/dnssd_service.cpp
+        src/core/services/dnssd/dnssd_service.h
+    )
+endif()
+
+if(LINUX)
+    list(APPEND PROJECT_SOURCES
+        src/core/services/avahi/avahi_service.cpp
+        src/core/services/avahi/avahi_service.h
     )
 endif()
 
@@ -180,7 +200,6 @@ find_package(Qt6 REQUIRED COMPONENTS QuickWidgets)
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 find_package(Qt6 REQUIRED COMPONENTS Multimedia)
 find_package(Qt6 REQUIRED COMPONENTS MultimediaWidgets)
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
 
 qt_add_executable(iDescriptor
@@ -218,10 +237,21 @@ target_link_libraries(iDescriptor PRIVATE
     PkgConfig::PLIST
     PkgConfig::QRENCODE
     PkgConfig::QTERMWIDGET
-    PkgConfig::AVAHI_CLIENT
     airplay
     ipatool-go
 )
+
+if(NOT APPLE)
+    target_link_libraries(iDescriptor PRIVATE
+        PkgConfig::AVAHI_CLIENT
+        # PkgConfig::AVAHI_COMMON
+    )
+else()
+    target_link_libraries(iDescriptor PRIVATE
+        ${CORE_SERVICES_FRAMEWORK}
+    )
+endif()
+
 
 # Add Apple-specific frameworks for SSH
 if(APPLE)
@@ -229,7 +259,6 @@ if(APPLE)
         ${SECURITY_FRAMEWORK}
         ${COREFOUNDATION_FRAMEWORK}
     )
-target_link_libraries(iDescriptor PRIVATE Qt6::Widgets)
 endif()
 
 # Add compile definition for source directory
