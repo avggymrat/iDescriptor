@@ -8,18 +8,14 @@
 #endif
 
 #include "iDescriptor.h"
+#include "sshterminalwidget.h"
 #include <QAbstractButton>
 #include <QButtonGroup>
 #include <QGroupBox>
 #include <QLabel>
-#include <QProcess>
 #include <QPushButton>
-#include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
-#include <libssh/libssh.h>
-
-class QTermWidget;
 
 enum class DeviceType { None, Wired, Wireless };
 
@@ -32,8 +28,7 @@ public:
     ~JailbrokenWidget();
 
 private slots:
-    void onConnectSSH();
-    void checkSshData();
+    void onOpenSSHTerminal();
     void onWiredDeviceAdded(iDescriptorDevice *device);
     void onWiredDeviceRemoved(const std::string &udid);
     void onWirelessDeviceAdded(const NetworkDevice &device);
@@ -41,7 +36,6 @@ private slots:
     void onDeviceSelected(QAbstractButton *button);
 
 private:
-    void setupTerminal();
     void setupDeviceSelectionUI(QVBoxLayout *layout);
     void updateDeviceList();
     void clearDeviceButtons();
@@ -49,14 +43,6 @@ private:
     void addWirelessDevice(const NetworkDevice &device);
     void resetSelection();
 
-    void initWiredDevice();
-    void initWirelessDevice();
-    void startSSH(const QString &host, uint16_t port);
-    void disconnectSSH();
-    void connectLibsshToTerminal();
-    void deviceConnected(iDescriptorDevice *device);
-
-    QTermWidget *m_terminal;
     QLabel *m_infoLabel;
     QPushButton *m_connectButton;
 
@@ -68,7 +54,7 @@ private:
     QVBoxLayout *m_wirelessDevicesLayout;
     QButtonGroup *m_deviceButtonGroup;
 
-#ifdef Q_OS_LINUX
+#ifdef __linux__
     AvahiService *m_wirelessProvider = nullptr;
 #endif
 
