@@ -1,10 +1,13 @@
 #ifndef AFCEXPLORER_H
 #define AFCEXPLORER_H
 
+#include "iDescriptor-ui.h"
 #include "iDescriptor.h"
+#include <QAction>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QPushButton>
@@ -29,8 +32,9 @@ signals:
 
 private slots:
     void goBack();
+    void goForward();
     void onItemDoubleClicked(QListWidgetItem *item);
-    void onBreadcrumbClicked();
+    void onAddressBarReturnPressed();
     void onFileListContextMenu(const QPoint &pos);
     void onExportClicked();
     void onImportClicked();
@@ -38,13 +42,18 @@ private slots:
 
 private:
     QWidget *m_explorer;
-    QPushButton *m_backBtn;
+    QWidget *m_navWidget;
     QPushButton *m_exportBtn;
     QPushButton *m_importBtn;
     QPushButton *m_addToFavoritesBtn;
     QListWidget *m_fileList;
     QStack<QString> m_history;
-    QHBoxLayout *m_breadcrumbLayout;
+    QStack<QString> m_forwardHistory;
+    int m_currentHistoryIndex;
+    QLineEdit *m_addressBar;
+    ClickableIconWidget *m_backButton;
+    ClickableIconWidget *m_forwardButton;
+    ClickableIconWidget *m_enterButton;
     iDescriptorDevice *m_device;
 
     // Current AFC mode
@@ -52,7 +61,8 @@ private:
 
     void setupFileExplorer();
     void loadPath(const QString &path);
-    void updateBreadcrumb(const QString &path);
+    void updateAddressBar(const QString &path);
+    void updateNavigationButtons();
     void saveFavoritePlace(const QString &path, const QString &alias);
 
     void setupContextMenu();
@@ -62,6 +72,7 @@ private:
                             const char *local_path);
     int import_file_to_device(afc_client_t afc, const char *device_path,
                               const char *local_path);
+    void updateNavStyles();
 };
 
 #endif // AFCEXPLORER_H

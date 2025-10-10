@@ -5,6 +5,9 @@
         <file>icons/MdiLightningBolt.png</file>
         <file>icons/MingcuteSettings7Line.png</file>
         <file>icons/ClarityHardDiskSolidAlerted.png</file>
+        <file>icons/IcOutlinePowerSettingsNew.png</file>
+        <file>icons/HugeiconsWrench01.png</file>
+        <file>icons/IcTwotoneRestartAlt.png</file>
         <file>icons/icon.png</file>
         <file>qml/MapView.qml</file>
         <file>resources/dump.js</file>

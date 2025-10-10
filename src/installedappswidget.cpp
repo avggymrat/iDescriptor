@@ -3,6 +3,7 @@
 #include "iDescriptor-ui.h"
 #include "iDescriptor.h"
 #include "qprocessindicator.h"
+#include "zlineedit.h"
 #include <QAction>
 #include <QApplication>
 #include <QDebug>
@@ -137,19 +138,25 @@ void AppTabWidget::leaveEvent(QEvent *event)
 
 void AppTabWidget::updateStyles()
 {
+    // QStyleHints::colorScheme()
     QString borderStyle;
-    // TODO: for some reason setting a style overrides every other style instead
-    // of adding or overriding
-    //  if (m_selected) {
-    //      setStyleSheet("border: 2px solid #007AFF;");
-    //  }
-    //      borderStyle = "border: 2px solid #007AFF;";
-    //  } else if (m_hovered) {
-    //      borderStyle = "border: 1px solid" + highlightColor.name() + ";";
-    //  } else {
-    //      borderStyle = "";
-    //  }
-    //  setStyleSheet(borderStyle);
+    // QColor bgColor = qApp->palette().color(QPalette::Window);
+    QColor bgColor = isDarkMode() ? qApp->palette().color(QPalette::Light)
+                                  : qApp->palette().color(QPalette::Dark);
+    qDebug() << styleSheet();
+    if (m_selected) {
+        borderStyle = "QGroupBox { background-color: " +
+                      qApp->palette().color(QPalette::Highlight).name() +
+                      "; border-radius: "
+                      "10px; border : 1px solid " +
+                      bgColor.lighter().name() + "; }";
+    } else {
+        borderStyle = "QGroupBox { background-color: " + bgColor.name() +
+                      "; border-radius: 10px; border: 1px solid " +
+                      bgColor.lighter().name() + "; }";
+    }
+    // update();
+    setStyleSheet(borderStyle);
 }
 
 InstalledAppsWidget::InstalledAppsWidget(iDescriptorDevice *device,
@@ -164,7 +171,7 @@ InstalledAppsWidget::InstalledAppsWidget(iDescriptorDevice *device,
             &InstalledAppsWidget::onAppsDataReady);
     connect(m_containerWatcher, &QFutureWatcher<QVariantMap>::finished, this,
             &InstalledAppsWidget::onContainerDataReady);
-
+    setStyleSheet("InstalledAppsWidget { background: transparent; }");
     fetchInstalledApps();
 }
 
@@ -189,6 +196,12 @@ void InstalledAppsWidget::setupUI()
 
     // Start in loading state
     showLoadingState();
+
+    connect(qApp, &QApplication::paletteChanged, this, [this]() {
+        for (AppTabWidget *tab : m_appTabs) {
+            tab->updateStyles();
+        }
+    });
 }
 
 void InstalledAppsWidget::showLoadingState()
@@ -534,6 +547,7 @@ void InstalledAppsWidget::createAppTab(const QString &appName,
         new AppTabWidget(appName, bundleId, version, this);
     connect(tabWidget, &AppTabWidget::clicked, this,
             &InstalledAppsWidget::onAppTabClicked);
+    m_appTabs.append(tabWidget);
 
     // Remove the stretch before adding the new tab
     m_tabLayout->removeItem(m_tabLayout->itemAt(m_tabLayout->count() - 1));
@@ -618,7 +632,6 @@ void InstalledAppsWidget::loadAppContainer(const QString &bundleId)
     loadingLayout->addWidget(l, 0, Qt::AlignCenter);
 
     m_containerLayout->addWidget(loadingWidget);
-    m_containerScrollArea->setVisible(true);
 
     QFuture<QVariantMap> future = QtConcurrent::run([this, bundleId]()
                                                         -> QVariantMap {
@@ -825,18 +838,8 @@ void InstalledAppsWidget::createLeftPanel()
     searchLayout->setContentsMargins(5, 0, 5, 5);
 
     // Search box
-    m_searchEdit = new QLineEdit();
+    m_searchEdit = new ZLineEdit();
     m_searchEdit->setPlaceholderText("Search apps...");
-    m_searchEdit->setStyleSheet("QLineEdit { "
-                                "    border: 2px solid #e0e0e0; "
-                                "    border-radius: 6px; "
-                                "    padding: 8px 12px; "
-                                "    font-size: 14px; "
-                                "} "
-                                "QLineEdit:focus { "
-                                "    border: 2px solid #007AFF; "
-                                "    outline: none; "
-                                "}");
     searchLayout->addWidget(m_searchEdit);
 
     // File sharing filter checkbox
@@ -851,10 +854,13 @@ void InstalledAppsWidget::createLeftPanel()
     m_tabScrollArea = new QScrollArea();
     m_tabScrollArea->setWidgetResizable(true);
     m_tabScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_tabScrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_tabScrollArea->setStyleSheet("QScrollArea { border: none; }");
+    m_tabScrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_tabScrollArea->setStyleSheet(
+        "QScrollArea { background: transparent; border: none; }");
+    m_tabScrollArea->viewport()->setStyleSheet("background: transparent;");
 
     m_tabContainer = new QWidget();
+    m_tabContainer->setStyleSheet("QWidget { background: transparent; }");
     m_tabLayout = new QVBoxLayout(m_tabContainer);
     m_tabLayout->setContentsMargins(0, 0, 10, 0);
     m_tabLayout->setSpacing(10);
@@ -874,19 +880,15 @@ void InstalledAppsWidget::createRightPanel()
     contentLayout->setContentsMargins(0, 0, 0, 5);
     contentLayout->setSpacing(0);
 
-    // Container explorer area
-    m_containerScrollArea = new QScrollArea();
-    m_containerScrollArea->setWidgetResizable(true);
-    m_containerScrollArea->setMinimumHeight(200);
-    m_containerScrollArea->setVisible(false);
-
     m_containerWidget = new QWidget();
+    m_containerWidget->setObjectName("containerWidget");
+    m_containerWidget->setStyleSheet(
+        "QWidget#containerWidget { border: none; }");
     m_containerLayout = new QVBoxLayout(m_containerWidget);
     m_containerLayout->setContentsMargins(0, 0, 0, 0);
     m_containerLayout->setSpacing(0);
 
-    m_containerScrollArea->setWidget(m_containerWidget);
-    contentLayout->addWidget(m_containerScrollArea);
+    contentLayout->addWidget(m_containerWidget);
 
     m_splitter->addWidget(rightContentWidget);
 }

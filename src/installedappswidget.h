@@ -2,6 +2,7 @@
 #define INSTALLEDAPPSWIDGET_H
 
 #include "iDescriptor.h"
+#include "zlineedit.h"
 #include <QCheckBox>
 #include <QEnterEvent>
 #include <QFrame>
@@ -9,7 +10,6 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QLineEdit>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QPainter>
@@ -38,6 +38,7 @@ public:
     QString getBundleId() const { return m_bundleId; }
     QString getAppName() const { return m_appName; }
     QString getVersion() const { return m_version; }
+    void updateStyles();
 
 signals:
     void clicked();
@@ -50,7 +51,6 @@ protected:
 private:
     void fetchAppIcon();
     void setupUI();
-    void updateStyles();
 
     QString m_appName;
     QString m_bundleId;
@@ -61,6 +61,7 @@ private:
     QLabel *m_iconLabel;
     QLabel *m_nameLabel;
     QLabel *m_versionLabel;
+    QList<AppTabWidget *> m_appTabs;
 };
 
 class InstalledAppsWidget : public QWidget
@@ -101,7 +102,7 @@ private:
     QWidget *m_errorWidget;
     QWidget *m_contentWidget;
     QLabel *m_errorLabel;
-    QLineEdit *m_searchEdit;
+    ZLineEdit *m_searchEdit;
     QCheckBox *m_fileSharingCheckBox;
     QScrollArea *m_tabScrollArea;
     QWidget *m_tabContainer;

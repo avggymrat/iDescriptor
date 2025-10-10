@@ -268,8 +268,13 @@ void ToolboxWidget::updateDeviceList()
         m_uuid.clear(); // No device, clear uuid
     } else {
         m_deviceCombo->setEnabled(true);
+        QString shortUdid =
+            QString::fromStdString(devices.first()->udid).left(8) + "...";
         for (iDescriptorDevice *device : devices) {
-            m_deviceCombo->addItem(QString::fromStdString(device->udid));
+            m_deviceCombo->addItem(
+                QString::fromStdString(device->deviceInfo.productType) + " / " +
+                    shortUdid,
+                QString::fromStdString(device->udid));
         }
         // TODO:
         m_uuid = devices.first()->udid;
@@ -381,29 +386,13 @@ void ToolboxWidget::onToolboxClicked(iDescriptorTool tool)
         virtualLocation->show();
     } break;
     case iDescriptorTool::Restart: {
-        if (!(restart(m_currentDevice->udid)))
-            warn("Failed to restart device");
-        else {
-            warn("Device will restart once unplugged", "Success");
-            qDebug() << "Restarting device";
-        }
+        restartDevice(m_currentDevice);
     } break;
     case iDescriptorTool::Shutdown: {
-        // TODO
-        //  if (!(shutdown(m_currentDevice->device)))
-        //      warn("Failed to shutdown device");
+        shutdownDevice(m_currentDevice);
     } break;
     case iDescriptorTool::RecoveryMode: {
-        // Handle entering recovery mode
-        bool success = enterRecoveryMode(m_currentDevice);
-        QMessageBox msgBox;
-        msgBox.setWindowTitle("Recovery Mode");
-        if (success) {
-            msgBox.setText("Successfully entered recovery mode.");
-        } else {
-            msgBox.setText("Failed to enter recovery mode.");
-        }
-        msgBox.exec();
+        _enterRecoveryMode(m_currentDevice);
     } break;
     case iDescriptorTool::QueryMobileGestalt: {
         // Handle querying MobileGestalt
@@ -455,4 +444,49 @@ void ToolboxWidget::onToolboxClicked(iDescriptorTool tool)
         qDebug() << "Clicked on unimplemented tool";
         break;
     }
+}
+
+void ToolboxWidget::restartDevice(iDescriptorDevice *device)
+{
+    if (!device || device->udid.empty()) {
+        return;
+    }
+
+    if (!(restart(device->udid)))
+        warn("Failed to restart device");
+    else {
+        warn("Device will restart once unplugged", "Success");
+        qDebug() << "Restarting device";
+    }
+}
+
+void ToolboxWidget::shutdownDevice(iDescriptorDevice *device)
+{
+    if (!device || device->udid.empty()) {
+        return;
+    }
+
+    if (!(shutdown(device->device)))
+        warn("Failed to shutdown device");
+    else {
+        warn("Device will shutdown once unplugged", "Success");
+        qDebug() << "Shutting down device";
+    }
+}
+
+void ToolboxWidget::_enterRecoveryMode(iDescriptorDevice *device)
+{
+    if (!device || device->udid.empty()) {
+        return;
+    }
+
+    bool success = enterRecoveryMode(device);
+    QMessageBox msgBox;
+    msgBox.setWindowTitle("Recovery Mode");
+    if (success) {
+        msgBox.setText("Successfully entered recovery mode.");
+    } else {
+        msgBox.setText("Failed to enter recovery mode.");
+    }
+    msgBox.exec();
 }

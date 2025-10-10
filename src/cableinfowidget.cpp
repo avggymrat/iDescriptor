@@ -63,16 +63,12 @@ void CableInfoWidget::initCableInfo()
     }
 
     m_statusLabel->setText("Analyzing cable...");
-    // Get cable info
     get_cable_info(m_device->device, m_response);
-    char *xml_string = nullptr;
-    uint32_t xml_length = 0;
-    plist_to_xml(m_response, &xml_string, &xml_length);
-    qDebug() << "Cable info plist:\n"
-             << QString::fromUtf8(xml_string, xml_length);
+
     analyzeCableInfo();
     updateUI();
 }
+
 // FIXME: genuine check is not perfect, still need more research
 void CableInfoWidget::analyzeCableInfo()
 {

@@ -69,9 +69,7 @@ void CustomTabWidget::setupGlider()
                             "  background-color: #2b5693;"
                             "  border-radius: 1px;"
                             "}");
-    // Set initial size - will be updated in animateGlider
-    m_glider->setFixedSize(100, 2); // 2px height for bottom border effect
-    m_glider->lower();              // Make sure glider is behind tabs
+    m_glider->hide(); // Hide initially until tabs are added
 
     m_gliderAnimation = new QPropertyAnimation(m_glider, "pos");
     m_gliderAnimation->setDuration(250);
@@ -102,6 +100,14 @@ int CustomTabWidget::addTab(QWidget *widget, const QIcon &icon,
     // Set first tab as checked by default
     if (index == 0) {
         tab->setChecked(true);
+        // Position glider immediately for first tab to prevent shifting
+        QTimer::singleShot(0, [this, tab]() {
+            m_glider->setFixedSize(tab->size().width(), 2);
+            int targetX = tab->pos().x();
+            int targetY = tab->pos().y() + tab->size().height() - 2;
+            m_glider->move(targetX, targetY);
+            m_glider->show();
+        });
     }
 
     return index;
@@ -122,12 +128,7 @@ void CustomTabWidget::setCurrentIndex(int index)
     emit currentChanged(index);
 }
 
-void CustomTabWidget::finalizeStyles()
-{
-    updateTabStyles();
-    // Position glider for first tab
-    QTimer::singleShot(0, [this]() { animateGlider(0); });
-}
+void CustomTabWidget::finalizeStyles() { updateTabStyles(); }
 
 int CustomTabWidget::currentIndex() const { return m_currentIndex; }
 

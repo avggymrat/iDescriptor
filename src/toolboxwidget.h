@@ -18,7 +18,9 @@ class ToolboxWidget : public QWidget
     Q_OBJECT
 public:
     explicit ToolboxWidget(QWidget *parent = nullptr);
-
+    static void restartDevice(iDescriptorDevice *device);
+    static void shutdownDevice(iDescriptorDevice *device);
+    static void _enterRecoveryMode(iDescriptorDevice *device);
 private slots:
     void onDeviceAdded();
     void onDeviceRemoved();

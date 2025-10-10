@@ -1,4 +1,5 @@
 #include "afcexplorerwidget.h"
+#include "iDescriptor-ui.h"
 #include "iDescriptor.h"
 #include "mediapreviewdialog.h"
 #include "settingsmanager.h"
@@ -12,8 +13,11 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QRegularExpression>
+#include <QScrollBar>
 #include <QSignalBlocker>
 #include <QSplitter>
+#include <QStyle>
 #include <QTemporaryDir>
 #include <QTreeWidget>
 #include <QVariant>
@@ -40,6 +44,8 @@ AfcExplorerWidget::AfcExplorerWidget(afc_client_t afcClient,
 
     // Initialize
     m_history.push("/");
+    m_currentHistoryIndex = 0;
+    m_forwardHistory.clear();
     loadPath("/");
 
     setupContextMenu();
@@ -48,9 +54,23 @@ AfcExplorerWidget::AfcExplorerWidget(afc_client_t afcClient,
 void AfcExplorerWidget::goBack()
 {
     if (m_history.size() > 1) {
-        m_history.pop();
+        // Move current path to forward history
+        QString currentPath = m_history.pop();
+        m_forwardHistory.push(currentPath);
+
         QString prevPath = m_history.top();
         loadPath(prevPath);
+        updateNavigationButtons();
+    }
+}
+
+void AfcExplorerWidget::goForward()
+{
+    if (!m_forwardHistory.isEmpty()) {
+        QString forwardPath = m_forwardHistory.pop();
+        m_history.push(forwardPath);
+        loadPath(forwardPath);
+        updateNavigationButtons();
     }
 }
 
@@ -70,8 +90,11 @@ void AfcExplorerWidget::onItemDoubleClicked(QListWidgetItem *item)
     QString nextPath = currPath == "/" ? "/" + name : currPath + name;
 
     if (isDir) {
+        // Clear forward history when navigating to a new directory
+        m_forwardHistory.clear();
         m_history.push(nextPath);
         loadPath(nextPath);
+        updateNavigationButtons();
     } else {
         const QString lowerFileName = name.toLower();
         const bool isPreviewable =
@@ -113,64 +136,52 @@ void AfcExplorerWidget::onItemDoubleClicked(QListWidgetItem *item)
     }
 }
 
-void AfcExplorerWidget::onBreadcrumbClicked()
+void AfcExplorerWidget::onAddressBarReturnPressed()
 {
-    QPushButton *btn = qobject_cast<QPushButton *>(sender());
-    if (!btn)
-        return;
-    QString path = btn->property("fullPath").toString();
-    // pathLabel removed, compare with m_history.top()
-    if (!m_history.isEmpty() && path == m_history.top())
-        return;
+    QString path = m_addressBar->text().trimmed();
+    if (path.isEmpty()) {
+        path = "/";
+    }
+
+    // Normalize the path
+    if (!path.startsWith("/")) {
+        path = "/" + path;
+    }
+
+    // Remove duplicate slashes
+    path = path.replace(QRegularExpression("/+"), "/");
+
+    // Clear forward history when navigating to a new path
+    m_forwardHistory.clear();
+
+    // Update history and load the path
     m_history.push(path);
     loadPath(path);
+    updateNavigationButtons();
 }
 
-void AfcExplorerWidget::updateBreadcrumb(const QString &path)
+void AfcExplorerWidget::updateNavigationButtons()
 {
-    // Remove old breadcrumb buttons
-    QLayoutItem *child;
-    while ((child = m_breadcrumbLayout->takeAt(0)) != nullptr) {
-        if (child->widget()) {
-            child->widget()->deleteLater();
-        }
-        delete child;
+    // Update button states based on history
+    if (m_backButton) {
+        m_backButton->setEnabled(m_history.size() > 1);
     }
-
-    QStringList parts = path.split("/", Qt::SkipEmptyParts);
-    QString currPath = "";
-    int idx = 0;
-    // Add root
-    QPushButton *rootBtn = new QPushButton("/");
-    rootBtn->setFlat(true);
-    rootBtn->setProperty("fullPath", "/");
-    connect(rootBtn, &QPushButton::clicked, this,
-            &AfcExplorerWidget::onBreadcrumbClicked);
-    m_breadcrumbLayout->addWidget(rootBtn);
-
-    for (const QString &part : parts) {
-        currPath += part;
-        if (idx > 0) {
-            QLabel *sep = new QLabel(" / ");
-            m_breadcrumbLayout->addWidget(sep);
-        }
-
-        QPushButton *btn = new QPushButton(part);
-        btn->setFlat(true);
-        btn->setProperty("fullPath", currPath);
-        connect(btn, &QPushButton::clicked, this,
-                &AfcExplorerWidget::onBreadcrumbClicked);
-        m_breadcrumbLayout->addWidget(btn);
-        idx++;
+    if (m_forwardButton) {
+        m_forwardButton->setEnabled(!m_forwardHistory.isEmpty());
     }
-    m_breadcrumbLayout->addStretch();
+}
+
+void AfcExplorerWidget::updateAddressBar(const QString &path)
+{
+    // Update the address bar with the current path
+    m_addressBar->setText(path);
 }
 
 void AfcExplorerWidget::loadPath(const QString &path)
 {
     m_fileList->clear();
 
-    updateBreadcrumb(path);
+    updateAddressBar(path);
 
     AFCFileTree tree =
         get_file_tree(m_currentAfcClient, m_device->device, path.toStdString());
@@ -435,23 +446,81 @@ void AfcExplorerWidget::setupFileExplorer()
     exportLayout->addStretch();
     explorerLayout->addLayout(exportLayout);
 
-    // Navigation layout (Back + Breadcrumb)
-    QHBoxLayout *navLayout = new QHBoxLayout();
-    m_backBtn = new QPushButton("Back");
-    m_breadcrumbLayout = new QHBoxLayout();
-    m_breadcrumbLayout->setSpacing(0);
-    navLayout->addWidget(m_backBtn);
-    navLayout->addLayout(m_breadcrumbLayout);
-    navLayout->addStretch();
-    explorerLayout->addLayout(navLayout);
+    // Navigation layout (Address Bar with embedded icons)
+    m_navWidget = new QWidget();
+    m_navWidget->setObjectName("navWidget");
+    m_navWidget->setFocusPolicy(Qt::StrongFocus); // Make it focusable
+    connect(qApp, &QApplication::paletteChanged, this,
+            &AfcExplorerWidget::updateNavStyles);
+
+    m_navWidget->setMaximumWidth(500);
+    m_navWidget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+
+    QHBoxLayout *navContainerLayout = new QHBoxLayout();
+    navContainerLayout->addStretch();
+    navContainerLayout->addWidget(m_navWidget);
+    navContainerLayout->addStretch();
+
+    QHBoxLayout *navLayout = new QHBoxLayout(m_navWidget);
+    navLayout->setContentsMargins(0, 0, 0, 0);
+    navLayout->setSpacing(0);
+
+    // Create navigation buttons using ClickableIconWidget
+    QWidget *explorerLeftSideNavButtons = new QWidget();
+    QHBoxLayout *leftNavLayout = new QHBoxLayout(explorerLeftSideNavButtons);
+    // explorerLeftSideNavButtons->setStyleSheet("border-right: 1px solid
+    // red;");
+    leftNavLayout->setContentsMargins(0, 0, 0, 0);
+    leftNavLayout->setSpacing(1);
+
+    m_backButton = new ClickableIconWidget(
+        QIcon::fromTheme("go-previous", QIcon("←")), "Go Back");
+    m_backButton->setEnabled(false);
+
+    m_forwardButton = new ClickableIconWidget(
+        QIcon::fromTheme("go-next", QIcon("→")), "Go Forward");
+    m_forwardButton->setEnabled(false);
+
+    m_enterButton = new ClickableIconWidget(
+        QIcon::fromTheme("go-jump", QIcon("⏎")), "Navigate to path");
+
+    m_addressBar = new QLineEdit();
+    m_addressBar->setPlaceholderText("Enter path...");
+    m_addressBar->setText("/");
+
+    // Add widgets to navigation layout
+    leftNavLayout->addWidget(m_backButton);
+    leftNavLayout->addWidget(m_forwardButton);
+    navLayout->addWidget(explorerLeftSideNavButtons);
+    navLayout->addWidget(m_addressBar);
+    navLayout->addWidget(m_enterButton);
+
+    // Add the container layout (which centers navWidget) to the main layout
+    explorerLayout->addLayout(navContainerLayout);
 
     // File list
     m_fileList = new QListWidget();
+    // todo
     m_fileList->setSelectionMode(QAbstractItemView::ExtendedSelection);
+
+    QScrollBar *vBar = m_fileList->QAbstractScrollArea::verticalScrollBar();
+    // vBar->setStyleSheet("background:red; border: red;");
+    vBar->setStyleSheet(styleSheet());
+    // vBar->setStyleSheet(
+    //     "QScrollArea { background: transparent; border: none; }");
+    // m_scrollArea->viewport()->setStyleSheet("background: transparent;");
+    // m_fileList->viewport()->setStyleSheet("background: transparent;");
     explorerLayout->addWidget(m_fileList);
 
-    // Connect buttons
-    connect(m_backBtn, &QPushButton::clicked, this, &AfcExplorerWidget::goBack);
+    // Connect buttons and actions
+    connect(m_backButton, &ClickableIconWidget::clicked, this,
+            &AfcExplorerWidget::goBack);
+    connect(m_forwardButton, &ClickableIconWidget::clicked, this,
+            &AfcExplorerWidget::goForward);
+    connect(m_enterButton, &ClickableIconWidget::clicked, this,
+            &AfcExplorerWidget::onAddressBarReturnPressed);
+    connect(m_addressBar, &QLineEdit::returnPressed, this,
+            &AfcExplorerWidget::onAddressBarReturnPressed);
     connect(m_fileList, &QListWidget::itemDoubleClicked, this,
             &AfcExplorerWidget::onItemDoubleClicked);
     connect(m_exportBtn, &QPushButton::clicked, this,
@@ -460,6 +529,9 @@ void AfcExplorerWidget::setupFileExplorer()
             &AfcExplorerWidget::onImportClicked);
     connect(m_addToFavoritesBtn, &QPushButton::clicked, this,
             &AfcExplorerWidget::onAddToFavoritesClicked);
+
+    updateNavigationButtons();
+    updateNavStyles();
 }
 
 // todo: implement
@@ -484,4 +556,36 @@ void AfcExplorerWidget::saveFavoritePlace(const QString &path,
     qDebug() << "Saving favorite place:" << alias << "->" << path;
     SettingsManager *settings = SettingsManager::sharedInstance();
     settings->saveFavoritePlace(path, alias);
+}
+
+void AfcExplorerWidget::updateNavStyles()
+{
+    QColor bgColor = isDarkMode() ? qApp->palette().color(QPalette::Light)
+                                  : qApp->palette().color(QPalette::Dark);
+    QColor borderColor = qApp->palette().color(QPalette::Mid);
+    QColor accentColor = qApp->palette().color(QPalette::Highlight);
+
+    QString navStyles = QString("QWidget#navWidget {"
+                                "    background-color: %1;"
+                                "    border: 1px solid %2;"
+                                "    border-radius: 10px;"
+                                "}"
+                                "QWidget#navWidget {"
+                                "    outline: 1px solid %3;"
+                                "    outline-offset: 1px;"
+                                "}")
+                            .arg(bgColor.name())
+                            .arg(bgColor.lighter().name())
+                            .arg(accentColor.name());
+
+    m_navWidget->setStyleSheet(navStyles);
+
+    // Update address bar styles to complement the nav widget
+    QString addressBarStyles =
+        QString("QLineEdit { background-color: %1; border-radius: 10px; "
+                "border: 1px solid %2; }")
+            .arg(bgColor.name())
+            .arg(borderColor.lighter().name());
+
+    m_addressBar->setStyleSheet(addressBarStyles);
 }

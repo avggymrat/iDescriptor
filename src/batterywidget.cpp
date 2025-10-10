@@ -1,6 +1,7 @@
 // https://github.com/p-dobrzynski-dev/QtCustomWidgets/blob/master/batterywidget.cpp
 #include "batterywidget.h"
 
+#include <QApplication>
 #include <QDebug>
 #include <QFontMetrics>
 #include <QPainter>
@@ -12,6 +13,8 @@ BatteryWidget::BatteryWidget(float value, bool isCharging, QWidget *parent)
 {
     setMinimumSize(30, 30);
     setMaximumSize(40, 40);
+
+    connect(qApp, &QApplication::paletteChanged, this, [this]() { update(); });
 }
 
 void BatteryWidget::resizeEvent(QResizeEvent *)
@@ -83,7 +86,6 @@ void BatteryWidget::paintEvent(QPaintEvent *)
     QBrush brush = QBrush(Qt::white);
 
     painter.setPen(pen);
-    // Drawing battery frame
 
     float widgetCorner = widgetFrame.height() / 15;
 
@@ -108,10 +110,11 @@ void BatteryWidget::paintEvent(QPaintEvent *)
     batteryLevelRect.moveTo(batteryLevelFrame.topLeft());
     painter.drawRoundedRect(batteryLevelRect, widgetCorner, widgetCorner);
 
-    pen.setColor(Qt::white);
+    pen.setColor(palette().color(QPalette::Text));
     painter.setPen(pen);
     QFont textFont = QFont();
     textFont.setPixelSize(widgetFrame.height() / 1.65);
+    textFont.setWeight(QFont::Bold);
     painter.setFont(textFont);
     QFontMetrics fm(textFont);
     QString percentageLevelString = QString("%1%").arg(m_value);

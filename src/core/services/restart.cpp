@@ -24,9 +24,6 @@
 #include <libimobiledevice/libimobiledevice.h>
 #include <libimobiledevice/lockdown.h>
 
-// TODO:break all the client because device wont restart if any client is still
-// connected we need to change the main device init function to not connect to
-// any client
 bool restart(std::string _udid)
 {
     idevice_t device = NULL;

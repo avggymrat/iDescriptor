@@ -24,9 +24,6 @@
 #include <libimobiledevice/libimobiledevice.h>
 #include <libimobiledevice/lockdown.h>
 
-// TODO:break all the client because device wont restart if any client is still
-// connected we need to change the main device init function to not connect to
-// any client
 bool shutdown(idevice_t device)
 {
     lockdownd_client_t lockdown_client = NULL;

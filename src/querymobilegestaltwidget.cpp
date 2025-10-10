@@ -43,7 +43,7 @@ void QueryMobileGestaltWidget::setupUI()
     buttonLayout->addWidget(selectAllButton);
     buttonLayout->addWidget(clearAllButton);
     buttonLayout->addStretch();
-    buttonLayout->setContentsMargins(5, 5, 5, 5);
+    buttonLayout->setContentsMargins(5, 0, 5, 0);
     groupLayout->addLayout(buttonLayout);
 
     // Scroll area for checkboxes

@@ -397,3 +397,5 @@ QPixmap load_heic(const QByteArray &data);
 
 QByteArray read_afc_file_to_byte_array(afc_client_t afcClient,
                                        const char *path);
+
+bool isDarkMode();

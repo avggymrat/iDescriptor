@@ -16,6 +16,8 @@
 #define COLOR_GREEN QColor(0, 180, 0)    // Green
 #define COLOR_ORANGE QColor(255, 140, 0) // Orange
 #define COLOR_RED QColor(255, 0, 0)      // Red
+#define COLOR_BLUE QColor("#2b5693")
+#define COLOR_ACCENT_BLUE QColor("#0b5ed7")
 
 // A custom QGraphicsView that keeps the content fitted with aspect ratio on
 // resize
@@ -59,6 +61,118 @@ protected:
     }
 };
 
+class ClickableIconWidget : public QWidget
+{
+    Q_OBJECT
+public:
+    ClickableIconWidget(const QIcon &icon, const QString &tooltip,
+                        QWidget *parent = nullptr)
+        : QWidget(parent), m_icon(icon), m_iconSize(24, 24), m_pressed(false)
+    {
+        setToolTip(tooltip);
+        setFixedSize(32, 32);
+        setCursor(Qt::PointingHandCursor);
+        connect(qApp, &QApplication::paletteChanged, this,
+                [this]() { update(); });
+    }
+
+    void setIcon(const QIcon &icon)
+    {
+        m_icon = icon;
+        update();
+    }
+    void setIconSize(const QSize &size)
+    {
+        m_iconSize = size;
+        update();
+    }
+
+signals:
+    void clicked();
+
+protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+        Q_UNUSED(event)
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+
+        // Draw background circle when hovered or pressed
+        if (underMouse() || m_pressed) {
+            QColor bgColor = palette().color(QPalette::Highlight);
+            bgColor.setAlpha(m_pressed ? 60 : 30);
+            painter.setBrush(bgColor);
+            painter.setPen(Qt::NoPen);
+            painter.drawEllipse(rect().adjusted(2, 2, -2, -2));
+        }
+
+        // Draw icon centered with theme-appropriate color
+        QRect iconRect = rect();
+        iconRect.setSize(m_iconSize);
+        iconRect.moveCenter(rect().center());
+
+        // Get the appropriate icon color based on theme
+        QColor iconColor = palette().color(QPalette::WindowText);
+
+        // Create a colored version of the icon
+        QPixmap pixmap = m_icon.pixmap(m_iconSize);
+        if (!pixmap.isNull()) {
+            QPixmap coloredPixmap(pixmap.size());
+            coloredPixmap.fill(Qt::transparent);
+
+            QPainter iconPainter(&coloredPixmap);
+            iconPainter.setCompositionMode(
+                QPainter::CompositionMode_SourceOver);
+            iconPainter.drawPixmap(0, 0, pixmap);
+            iconPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+            iconPainter.fillRect(coloredPixmap.rect(), iconColor);
+
+            painter.drawPixmap(iconRect, coloredPixmap);
+        } else {
+            m_icon.paint(&painter, iconRect);
+        }
+    }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton) {
+            m_pressed = true;
+            update();
+        }
+        QWidget::mousePressEvent(event);
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && m_pressed) {
+            m_pressed = false;
+            update();
+            if (rect().contains(event->pos())) {
+                emit clicked();
+            }
+        }
+        QWidget::mouseReleaseEvent(event);
+    }
+
+    void enterEvent(QEnterEvent *event) override
+    {
+        Q_UNUSED(event)
+        update();
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        Q_UNUSED(event)
+        m_pressed = false;
+        update();
+    }
+
+private:
+    QIcon m_icon;
+    QSize m_iconSize;
+    bool m_pressed;
+};
+
 enum class iDescriptorTool {
     Airplayer,
     RealtimeScreen,
@@ -96,6 +210,46 @@ protected:
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
 
+        // Draw fading left and right borders (no top/bottom)
+        QColor borderColor = QApplication::palette().color(QPalette::Mid);
+
+        // Create gradient for fading effect
+        int fadeMargin = 20; // pixels to fade over
+        int centerHeight = height() / 2;
+        int fadeStart = fadeMargin;
+        int fadeEnd = height() - fadeMargin;
+
+        // Left border with fade
+        for (int y = 0; y < height(); ++y) {
+            QColor currentColor = borderColor;
+            if (y < fadeStart) {
+                // Fade from transparent to full opacity
+                float alpha = static_cast<float>(y) / fadeStart;
+                currentColor.setAlphaF(alpha * borderColor.alphaF());
+            } else if (y > fadeEnd) {
+                // Fade from full opacity to transparent
+                float alpha = static_cast<float>(height() - y) / fadeMargin;
+                currentColor.setAlphaF(alpha * borderColor.alphaF());
+            }
+            painter.setPen(QPen(currentColor, 1));
+            painter.drawPoint(0, y);
+        }
+
+        // Right border with fade
+        for (int y = 0; y < height(); ++y) {
+            QColor currentColor = borderColor;
+            if (y < fadeStart) {
+                float alpha = static_cast<float>(y) / fadeStart;
+                currentColor.setAlphaF(alpha * borderColor.alphaF());
+            } else if (y > fadeEnd) {
+                float alpha = static_cast<float>(height() - y) / fadeMargin;
+                currentColor.setAlphaF(alpha * borderColor.alphaF());
+            }
+            painter.setPen(QPen(currentColor, 1));
+            painter.drawPoint(width() - 1, y);
+        }
+
+        // Draw the center button
         QColor buttonColor = QApplication::palette().color(QPalette::Text);
         buttonColor.setAlpha(60);
 
@@ -123,7 +277,6 @@ public:
         : QSplitter(orientation, parent)
     {
         setHandleWidth(10);
-        setCursor(Qt::SplitHCursor);
     }
 
 protected:

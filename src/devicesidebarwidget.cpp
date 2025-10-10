@@ -82,27 +82,29 @@ void DeviceSidebarItem::setupUI()
     for (QPushButton *btn : navButtons) {
         btn->setCheckable(true);
         btn->setMaximumHeight(25);
-        btn->setStyleSheet("QPushButton { "
-                           "  background-color: #f8f9fa; "
-                           "  border: 1px solid #dee2e6; "
-                           "  padding: 4px 8px; "
-                           "  text-align: center; "
-                           "  border-radius: 3px; "
-                           "  font-size: 11px; "
-                           "  color: #212529; "
-                           "} "
-                           "QPushButton:checked { "
-                           "  background-color: #0d6efd; "
-                           "  color: white; "
-                           "  border: 1px solid #0a58ca; "
-                           "} "
-                           "QPushButton:hover:!checked { "
-                           "  background-color: #e9ecef; "
-                           "  border-color: #adb5bd; "
-                           "} "
-                           "QPushButton:checked:hover { "
-                           "  background-color: #0b5ed7; "
-                           "}");
+        btn->setStyleSheet(
+            QString("QPushButton { "
+                    "  background-color: #f8f9fa; "
+                    "  border: 1px solid #dee2e6; "
+                    "  padding: 4px 8px; "
+                    "  text-align: center; "
+                    "  border-radius: 3px; "
+                    "  font-size: 11px; "
+                    "  color: #212529; "
+                    "} "
+                    "QPushButton:checked { "
+                    "  background-color: %1; "
+                    "  color: white; "
+                    "  border: 1px solid %1; "
+                    "} "
+                    "QPushButton:hover:!checked { "
+                    "  background-color: #e9ecef; "
+                    "  border-color: #adb5bd; "
+                    "} "
+                    "QPushButton:checked:hover { "
+                    "  background-color: %2; "
+                    "}")
+                .arg(COLOR_ACCENT_BLUE.name(), COLOR_BLUE.name()));
 
         connect(btn, &QPushButton::clicked, this,
                 &DeviceSidebarItem::onNavigationButtonClicked);
@@ -129,10 +131,11 @@ void DeviceSidebarItem::setSelected(bool selected)
         return;
 
     m_selected = selected;
-
+    // todo : bug the first device selected style is not applied
     if (selected) {
-        setStyleSheet("DeviceSidebarItem { border: "
-                      "2px solid #2196f3; border-radius: 5px; }");
+        setStyleSheet(QString("DeviceSidebarItem { border: "
+                              "2px solid %1; border-radius: 5px; }")
+                          .arg(COLOR_BLUE.name()));
     } else {
         setStyleSheet("DeviceSidebarItem { border: "
                       "1px solid #e0e0e0; border-radius: 5px; }");

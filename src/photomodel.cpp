@@ -1,4 +1,3 @@
-
 #include "photomodel.h"
 #include "iDescriptor.h"
 #include "mediastreamermanager.h"
@@ -31,8 +30,7 @@ PhotoModel::PhotoModel(iDescriptorDevice *device, QObject *parent)
     connect(this, &PhotoModel::thumbnailNeedsToBeLoaded, this,
             &PhotoModel::requestThumbnail, Qt::QueuedConnection);
 
-    // Populate the photo paths
-    populatePhotoPaths();
+    // Don't populate paths in constructor - wait for setAlbumPath
 }
 
 PhotoModel::~PhotoModel()
@@ -415,15 +413,50 @@ void PhotoModel::populatePhotoPaths()
 {
     // TODO:beginResetModel called on PhotoModel(0x600002d12a40) without calling
     // endResetModel first
+    if (m_albumPath.isEmpty()) {
+        qDebug() << "No album path set, skipping population";
+        return;
+    }
+
     beginResetModel();
     m_allPhotos.clear();
     m_photos.clear();
 
     // Your existing logic to populate photo paths
     char **files = nullptr;
-    const char *photoDir = "/DCIM/100APPLE";
-    safe_afc_read_directory(m_device->afcClient, m_device->device, photoDir,
-                            &files);
+    qDebug() << "Populating photos from album path:" << m_albumPath;
+
+    // First verify the album path exists
+    QByteArray albumPathBytes = m_albumPath.toUtf8();
+    const char *albumPathCStr = albumPathBytes.constData();
+
+    char **albumInfo = nullptr;
+    afc_error_t infoResult =
+        afc_get_file_info(m_device->afcClient, albumPathCStr, &albumInfo);
+    if (infoResult != AFC_E_SUCCESS) {
+        qDebug() << "Album path does not exist or cannot be accessed:"
+                 << m_albumPath << "Error:" << infoResult;
+        endResetModel();
+        return;
+    }
+    if (albumInfo) {
+        afc_dictionary_free(albumInfo);
+    }
+
+    // Fix: Store the QByteArray to keep the C string valid
+    QByteArray photoDirBytes = m_albumPath.toUtf8();
+    const char *photoDir = photoDirBytes.constData();
+    qDebug() << "Photo directory:" << m_albumPath;
+    qDebug() << "Photo directory C string:" << photoDir;
+
+    afc_error_t readResult = safe_afc_read_directory(
+        m_device->afcClient, m_device->device, photoDir, &files);
+    if (readResult != AFC_E_SUCCESS) {
+        qDebug() << "Failed to read photo directory:" << photoDir
+                 << "Error:" << readResult;
+        endResetModel();
+        return;
+    }
 
     if (files) {
         for (int i = 0; files[i]; i++) {
@@ -436,7 +469,7 @@ void PhotoModel::populatePhotoPaths()
                 fileName.endsWith(".M4V", Qt::CaseInsensitive)) {
 
                 PhotoInfo info;
-                info.filePath = QString(photoDir) + "/" + fileName;
+                info.filePath = m_albumPath + "/" + fileName;
                 info.fileName = fileName;
                 info.thumbnailRequested = false;
                 info.fileType = determineFileType(fileName);
@@ -655,3 +688,13 @@ PhotoInfo::FileType PhotoModel::determineFileType(const QString &fileName) const
         return PhotoInfo::Image;
     }
 }
+
+void PhotoModel::setAlbumPath(const QString &albumPath)
+{
+    if (m_albumPath != albumPath) {
+        m_albumPath = albumPath;
+        populatePhotoPaths();
+    }
+}
+
+void PhotoModel::refreshPhotos() { populatePhotoPaths(); }

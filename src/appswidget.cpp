@@ -5,6 +5,7 @@
 #include "appinstalldialog.h"
 #include "appstoremanager.h"
 #include "logindialog.h"
+#include "zlineedit.h"
 #include <QApplication>
 #include <QComboBox>
 #include <QDebug>
@@ -59,7 +60,7 @@ void AppsWidget::setupUI()
     m_statusLabel->setStyleSheet("margin-right: 20px;");
 
     m_loginButton = new QPushButton();
-    m_searchEdit = new QLineEdit();
+    m_searchEdit = new ZLineEdit();
     m_searchEdit->setMaximumWidth(400);
     m_searchEdit->setStyleSheet("QLineEdit { "
                                 "  padding: 8px; "

@@ -85,7 +85,9 @@ void JailbrokenWidget::setupDeviceSelectionUI(QVBoxLayout *layout)
     scrollArea->setWidgetResizable(true);
     scrollArea->setMinimumHeight(200);
     scrollArea->setMaximumHeight(300);
+    scrollArea->setObjectName("devicescrollArea");
 
+    scrollArea->setStyleSheet("QWidget#devicescrollArea {border: none;}");
     QWidget *scrollContent = new QWidget();
     m_deviceLayout = new QVBoxLayout(scrollContent);
     m_deviceLayout->setContentsMargins(5, 5, 5, 5);

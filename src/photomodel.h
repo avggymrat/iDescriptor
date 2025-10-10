@@ -42,6 +42,10 @@ public:
     void setThumbnailSize(const QSize &size);
     void clearCache();
 
+    // Album management
+    void setAlbumPath(const QString &albumPath);
+    void refreshPhotos();
+
     // Sorting and filtering
     void setSortOrder(SortOrder order);
     SortOrder sortOrder() const { return m_sortOrder; }
@@ -75,6 +79,7 @@ private slots:
 private:
     // Data members
     iDescriptorDevice *m_device;
+    QString m_albumPath;
     QList<PhotoInfo> m_allPhotos; // All photos from device
     QList<PhotoInfo> m_photos;    // Currently filtered/sorted photos
 

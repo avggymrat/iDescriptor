@@ -230,7 +230,6 @@ target_link_libraries(iDescriptor PRIVATE
     ${SSL_LIBRARY}
     ${CRYPTO_LIBRARY}
     ${SSH_LIBRARY}
-    ${HEIF_LIBRARIES}
     # ${FRIDA_LIBRARY}
     # ${ZIP_LIBRARY}
     PkgConfig::PUGIXML

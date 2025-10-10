@@ -5,6 +5,7 @@
 #include "iDescriptor-ui.h"
 #include "iDescriptor.h"
 #include "infolabel.h"
+#include "toolboxwidget.h"
 #include <QApplication>
 #include <QDebug>
 #include <QGraphicsDropShadowEffect>
@@ -31,15 +32,57 @@ DeviceInfoWidget::DeviceInfoWidget(iDescriptorDevice *device, QWidget *parent)
     mainLayout->setContentsMargins(0, 0, 10, 0);
     mainLayout->setSpacing(1);
 
+    // Left side container for image and actions
+    QWidget *leftContainer = new QWidget();
+    QVBoxLayout *leftLayout = new QVBoxLayout(leftContainer);
+    leftLayout->setContentsMargins(0, 0, 0, 0);
+    leftLayout->setSpacing(1);
+
     // Create responsive image label
     m_deviceImageLabel = new ResponsiveQLabel(this);
     m_deviceImageLabel->setPixmap(QPixmap(":/resources/iphone.png"));
     m_deviceImageLabel->setMinimumWidth(200);
-    m_deviceImageLabel->setSizePolicy(QSizePolicy::Ignored,
-                                      QSizePolicy::Expanding);
+    m_deviceImageLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_deviceImageLabel->setStyleSheet("background: transparent; border: none;");
 
-    mainLayout->addWidget(m_deviceImageLabel, 1); // Stretch factor 1
+    // Actions group box
+    QWidget *actionsWidget = new QWidget();
+    actionsWidget->setObjectName("actionsWidget");
+    actionsWidget->setFixedHeight(40);
+    actionsWidget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    actionsWidget->setStyleSheet(
+        "QWidget#actionsWidget { background: transparent; border: none; }");
+    QHBoxLayout *actionsLayout = new QHBoxLayout(actionsWidget);
+    actionsLayout->setContentsMargins(1, 1, 1, 1);
+    actionsLayout->setSpacing(10);
+
+    ClickableIconWidget *shutdownBtn = new ClickableIconWidget(
+        QIcon(":/icons/IcOutlinePowerSettingsNew.png"), "Shutdown", this);
+    shutdownBtn->setIconSize(QSize(20, 20));
+    connect(shutdownBtn, &ClickableIconWidget::clicked, this,
+            [device]() { ToolboxWidget::shutdownDevice(device); });
+
+    ClickableIconWidget *restartBtn = new ClickableIconWidget(
+        QIcon(":/icons/IcTwotoneRestartAlt.png"), "Restart", this);
+    restartBtn->setIconSize(QSize(20, 20));
+    connect(restartBtn, &ClickableIconWidget::clicked, this,
+            [device]() { ToolboxWidget::restartDevice(device); });
+
+    ClickableIconWidget *recoveryBtn = new ClickableIconWidget(
+        QIcon(":/icons/HugeiconsWrench01.png"), "Recovery", this);
+    recoveryBtn->setIconSize(QSize(20, 20));
+    connect(recoveryBtn, &ClickableIconWidget::clicked, this,
+            [device]() { ToolboxWidget::_enterRecoveryMode(device); });
+
+    actionsLayout->addWidget(shutdownBtn);
+    actionsLayout->addWidget(restartBtn);
+    actionsLayout->addWidget(recoveryBtn);
+
+    leftLayout->addWidget(m_deviceImageLabel);
+    leftLayout->addWidget(actionsWidget, 0, Qt::AlignCenter);
+    leftLayout->addStretch(); // stretch to push everything to the top
+
+    mainLayout->addWidget(leftContainer); // Stretch factor 1
 
     // Right side: Info Table
     QWidget *infoContainer = new QWidget();
@@ -65,9 +108,11 @@ DeviceInfoWidget::DeviceInfoWidget(iDescriptorDevice *device, QWidget *parent)
     diskCapacityLabel->setSizePolicy(QSizePolicy::Maximum,
                                      QSizePolicy::Preferred);
     diskCapacityLabel->setAttribute(Qt::WA_StyledBackground, true);
-    diskCapacityLabel->setStyleSheet("background-color: rgba(0, 255, 30, 0.5);"
-                                     "padding: 2px;"
-                                     "border-radius: 13px;");
+    // background-color: rgba(0, 255, 30, 0.5);
+    diskCapacityLabel->setStyleSheet(QString("background-color: %1;"
+                                             "padding: 2px 4px;"
+                                             "border-radius: 13px;")
+                                         .arg(COLOR_ACCENT_BLUE.name()));
 
     m_chargingStatusLabel =
         new QLabel(device->deviceInfo.batteryInfo.isCharging ? "Charging"
