@@ -125,15 +125,20 @@ jobs:
           wget -c -nv "https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage"
           chmod a+x linuxdeployqt-continuous-x86_64.AppImage
 
+      - name: Remove unused Qt SQL plugins to fix linuxdeployqt error
+        if: runner.os == 'Linux'
+        run: |
+          rm ${{ github.workspace }}/Qt/6.7.2/gcc_64/plugins/sqldrivers/libqsqlmimer.so
+
       - name: Build AppImage
         if: runner.os == 'Linux'
         working-directory: ./build
         run: |
           # Shows excluded libs for debugging
-          ../linuxdeployqt-continuous-x86_64.AppImage iDescriptor -qmldir=../qml -appimage -show-exclude-libs -ignore-glob="libqsqlmimer.so"
+          ../linuxdeployqt-continuous-x86_64.AppImage iDescriptor -qmldir=../qml -appimage -show-exclude-libs
           # Build
           export VERSION=1.0.0
-          ../linuxdeployqt-continuous-x86_64.AppImage iDescriptor -qmldir=../qml -appimage -ignore-glob="libqsqlmimer.so"
+          ../linuxdeployqt-continuous-x86_64.AppImage iDescriptor -qmldir=../qml -appimage
 
       - name: Upload Artifact (Linux)
         if: runner.os == 'Linux'
