@@ -207,11 +207,11 @@ void iFuseWidget::onMountClicked()
      Check if running in AppImage
      this is set by the plugin script
     */
-    if (qEnvironmentVariableIsSet("IFUSE_APPIMAGE")) {
-        ifuseExecutablePath = qgetenv("IFUSE_APPIMAGE");
+    if (qEnvironmentVariableIsSet("IFUSE_BIN_APPIMAGE")) {
+        ifuseExecutablePath = qgetenv("IFUSE_BIN_APPIMAGE");
         if (ifuseExecutablePath.isEmpty()) {
             setStatusMessage("Error: Running in AppImage mode, but "
-                             "IFUSE_APPIMAGE is not set.",
+                             "IFUSE_BIN_APPIMAGE is not set.",
                              true);
             return;
         }

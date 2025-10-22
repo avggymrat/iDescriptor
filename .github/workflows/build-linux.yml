@@ -10,6 +10,8 @@ env:
   LIBIMOBILEDEVICE_GLUE_VER: "1.3.2"
   LIBIMOBILEDEVICE_VER: "1.4.0"
   LIBIRECOVERY_VER: "1.3.1"
+  LIBIFUSE_VER: "1.2.0"
+  LIBUSBMUXD_VER: "2.1.1"
 
 jobs:
   build-linux:
@@ -62,7 +64,8 @@ jobs:
             libxkbcommon-x11-0 \
             libheif-dev \
             libzip-dev \
-            libssh-dev
+            libssh-dev \
+            libfuse3-dev \
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
@@ -97,7 +100,7 @@ jobs:
 
           base_url="https://github.com/libimobiledevice"
 
-          libs=( "libplist" "libtatsu" "libimobiledevice-glue" "libimobiledevice" "libirecovery" )
+          libs=( "libplist" "libtatsu" "libimobiledevice-glue" "libimobiledevice" "libirecovery"  "libifuse" "libusbmuxd" )
 
           for name in "${libs[@]}"; do
             ver_var=$(echo "${name^^}_VER" | sed 's/-/_/g')   # e.g. LIBPLIST_VER

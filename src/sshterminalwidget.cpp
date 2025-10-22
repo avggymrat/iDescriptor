@@ -1,6 +1,7 @@
 #include "sshterminalwidget.h"
 #include "qprocessindicator.h"
 #include <QDebug>
+#include <QDir>
 #include <QFile>
 #include <QHBoxLayout>
 #include <QHostAddress>
@@ -10,6 +11,7 @@
 #include <QProcessEnvironment>
 #include <QPushButton>
 #include <QStackedWidget>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <libssh/libssh.h>
@@ -257,20 +259,32 @@ void SSHTerminalWidget::initWiredDevice()
     qDebug() << "Starting iproxy with args:" << args;
 
     QString iproxyPath;
-    QStringList possiblePaths = {"/usr/local/bin/iproxy",
-                                 "/opt/homebrew/bin/iproxy", "/usr/bin/iproxy",
-                                 "iproxy"};
 
-    for (const QString &path : possiblePaths) {
-        if (QFile::exists(path) || path == "iproxy") {
-            iproxyPath = path;
-            break;
+    /*
+     Check if running in AppImage
+     this is set by the plugin script
+    */
+    if (qEnvironmentVariableIsSet("IPROXY_BIN_APPIMAGE")) {
+        iproxyPath = qgetenv("IPROXY_BIN_APPIMAGE");
+        if (iproxyPath.isEmpty()) {
+            showError("Error: Running in AppImage mode, but "
+                      "IPROXY_BIN_APPIMAGE is not set.");
+            return;
         }
-    }
 
-    if (iproxyPath.isEmpty()) {
-        showError("Error: iproxy not found. Please install libimobiledevice.");
-        return;
+        if (!QFileInfo(iproxyPath).isExecutable()) {
+            showError(
+                "Error: Bundled iproxy not found or is not executable at " +
+                iproxyPath);
+            return;
+        }
+    } else {
+        iproxyPath = QStandardPaths::findExecutable("iproxy");
+        if (iproxyPath.isEmpty()) {
+            showError(
+                "Error: iproxy not found. Please install libimobiledevice.");
+            return;
+        }
     }
 
     qDebug() << "Using iproxy at:" << iproxyPath;

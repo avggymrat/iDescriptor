@@ -120,6 +120,8 @@ chmod +x "$APPDIR/apprun-hooks/linuxdeploy-plugin-env.sh"
 # .desktop file
 cp iDescriptor.desktop "$APPDIR/usr/share/applications/"
 
+export LD_LIBRARY_PATH="$APPDIR/usr/local/lib:$LD_LIBRARY_PATH"
+
  ./linuxdeploy-x86_64.AppImage \
             --appdir ./AppDir \
             --desktop-file AppDir/usr/share/applications/iDescriptor.desktop \
