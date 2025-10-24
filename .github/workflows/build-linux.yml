@@ -81,7 +81,7 @@ jobs:
           sudo make install
           popd
 
-          git clone https://github.com/uncor3/qtermwidget.git
+          git clone https://github.com/lxqt/qtermwidget.git
           pushd qtermwidget
           mkdir build && cd build
           cmake ..

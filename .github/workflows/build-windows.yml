@@ -111,6 +111,22 @@ jobs:
 
           "BONJOUR_SDK_HOME=C:/Program Files/Bonjour SDK" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      - name: Compile additional dependencies
+        run: |
+          git clone https://github.com/lxqt/lxqt-build-tools.git
+          pushd lxqt-build-tools
+          mkdir build && cd build
+          cmake ..
+          sudo make install
+          popd
+
+          git clone https://github.com/uncor3/qtermwidget.git
+          pushd qtermwidget
+          mkdir build && cd build
+          cmake ..
+          sudo make install
+          popd
+
       - name: Build libimobiledevice suite (versioned tarballs)
         run: |
           set -euo pipefail
