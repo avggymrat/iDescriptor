@@ -24,8 +24,8 @@ SSHTerminalWidget::SSHTerminalWidget(const ConnectionInfo &connectionInfo,
       m_sshChannel(nullptr), m_iproxyProcess(nullptr), m_sshConnected(false),
       m_isInitialized(false), m_currentState(TerminalState::Loading)
 {
-    setWindowTitle(
-        QString("SSH Terminal - %1").arg(m_connectionInfo.deviceName));
+    setWindowTitle(QString("SSH Terminal / %1 - iDescriptor")
+                       .arg(m_connectionInfo.deviceName));
     setMinimumSize(800, 600);
 
     setupUI();
@@ -130,8 +130,11 @@ void SSHTerminalWidget::setupActionState()
                     menu.exec(m_terminal->mapToGlobal(pos));
                 }
             });
-
+#ifdef WIN32
+    m_terminal->startTerminalEmulation();
+#else
     m_terminal->startTerminalTeletype();
+#endif
     m_terminal->setStyleSheet("padding: 5px;");
 
     actionLayout->addWidget(m_terminal);
@@ -459,8 +462,12 @@ void SSHTerminalWidget::checkSshData()
         int nbytes = ssh_channel_read_nonblocking(m_sshChannel, buffer,
                                                   sizeof(buffer), 0);
         if (nbytes > 0) {
+#ifdef WIN32
+            m_terminal->receiveData(buffer, nbytes);
+#else
             // Write data to terminal's PTY
             write(m_terminal->getPtySlaveFd(), buffer, nbytes);
+#endif
         }
     }
 
@@ -471,7 +478,11 @@ void SSHTerminalWidget::checkSshData()
                                                   sizeof(buffer), 1);
         if (nbytes > 0) {
             // Write stderr data to terminal's PTY
+#ifdef WIN32
+            m_terminal->receiveData(buffer, nbytes);
+#else
             write(m_terminal->getPtySlaveFd(), buffer, nbytes);
+#endif
         }
     }
 

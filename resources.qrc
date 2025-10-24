@@ -17,7 +17,7 @@
         <file>resources/icons/MdiLightMagnify.png</file>
         <file>resources/icons/IcBaselineInsertDriveFile.png</file>
         <file>resources/icons/MaterialSymbolsLightHome.png</file>
-        <!-- <file>resources/icons/icon.png</file> -->
+        <file>resources/icons/app-icon/icon.ico</file> 
         <file>qml/MapView.qml</file>
         <!-- TODO: -->
         <!-- <file>resources/dump.js</file> -->

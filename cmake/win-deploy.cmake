@@ -1,16 +1,57 @@
 # Windows deployment script for Qt applications with MinGW/MSYS2
 # This script handles Qt deployment, runtime DLL copying, and GStreamer plugins
 
-if(NOT EXISTS ${EXECUTABLE_PATH})
-    message(FATAL_ERROR "Executable not found: ${EXECUTABLE_PATH}")
+# Strip quotes from all path variables if they exist
+string(REPLACE "\"" "" EXECUTABLE_PATH "${EXECUTABLE_PATH}")
+string(REPLACE "\"" "" OUTPUT_DIR "${OUTPUT_DIR}")
+string(REPLACE "\"" "" QT_BIN_PATH "${QT_BIN_PATH}")
+string(REPLACE "\"" "" MSYS2_BIN_PATH "${MSYS2_BIN_PATH}")
+if(QML_SOURCE_DIR)
+    string(REPLACE "\"" "" QML_SOURCE_DIR "${QML_SOURCE_DIR}")
 endif()
 
 message("=== Starting Windows deployment for: ${EXECUTABLE_PATH} ===")
+message("Debug info:")
+message("  EXECUTABLE_PATH: ${EXECUTABLE_PATH}")
+message("  OUTPUT_DIR: ${OUTPUT_DIR}")
+message("  QT_BIN_PATH: ${QT_BIN_PATH}")
+message("  MSYS2_BIN_PATH: ${MSYS2_BIN_PATH}")
 
-# Step 1: Run windeployqt6 to copy Qt-related DLLs and plugins
-message("Running windeployqt6 to deploy Qt dependencies...")
+if(NOT EXISTS ${EXECUTABLE_PATH})
+    message(STATUS "Executable not found: ${EXECUTABLE_PATH}")
+    message(STATUS "Checking if it's a path issue...")
+    
+    # Try to find the executable with different path formats
+    get_filename_component(DIR_PATH ${EXECUTABLE_PATH} DIRECTORY)
+    get_filename_component(FILE_NAME ${EXECUTABLE_PATH} NAME)
+    
+    message(STATUS "Directory path: ${DIR_PATH}")
+    message(STATUS "File name: ${FILE_NAME}")
+    
+    # List contents of the directory
+    if(EXISTS ${DIR_PATH})
+        message(STATUS "Directory exists, listing contents:")
+        file(GLOB DIR_CONTENTS "${DIR_PATH}/*")
+        foreach(ITEM ${DIR_CONTENTS})
+            message(STATUS "  Found: ${ITEM}")
+        endforeach()
+    else()
+        message(STATUS "Directory does not exist: ${DIR_PATH}")
+    endif()
+    
+    message(FATAL_ERROR "Executable not found: ${EXECUTABLE_PATH}")
+endif()
+
+message("SUCCESS: Executable found at: ${EXECUTABLE_PATH}")
+
+message("Running windeployqt6 to deploy Qt dependencies (without compiler runtime)...")
+
+
+
+
+message("Executing: ${QT_BIN_PATH}/windeployqt6.exe --dir ${OUTPUT_DIR} --plugindir ${OUTPUT_DIR}/plugins ${EXECUTABLE_PATH}")
 execute_process(
-    COMMAND ${MSYS2_BIN_PATH}/windeployqt6.exe --dir ${OUTPUT_DIR} --plugindir ${OUTPUT_DIR}/plugins ${EXECUTABLE_PATH}
+    COMMAND ${QT_BIN_PATH}/windeployqt6.exe --dir ${OUTPUT_DIR} --plugindir ${OUTPUT_DIR}/plugins ${EXECUTABLE_PATH}
     RESULT_VARIABLE WINDEPLOYQT_RESULT
     OUTPUT_VARIABLE WINDEPLOYQT_OUTPUT
     ERROR_VARIABLE WINDEPLOYQT_ERROR
@@ -25,22 +66,56 @@ endif()
 # Step 2: Find and copy runtime dependencies using GET_RUNTIME_DEPENDENCIES
 message("Analyzing runtime dependencies for: ${EXECUTABLE_PATH}")
 
+# Get the build directory to exclude DLLs already there
+get_filename_component(BUILD_DIR ${EXECUTABLE_PATH} DIRECTORY)
+
 file(GET_RUNTIME_DEPENDENCIES
     EXECUTABLES ${EXECUTABLE_PATH}
     RESOLVED_DEPENDENCIES_VAR DLLS
-    PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-" "^AVRT" "^avrt" "^MSVCP" "^VCRUNTIME" "^ucrtbase"
-    POST_EXCLUDE_REGEXES ".*system32/.*\\.dll" ".*SysWOW64/.*\\.dll" ".*Windows/.*\\.dll" ".*Microsoft.VC.*"
-    DIRECTORIES ${MSYS2_BIN_PATH} $ENV{PATH}
+    PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-" "^AVRT" "^avrt" "^MSVCP" "^VCRUNTIME" "^ucrtbase" "^libgcc_s_seh-1\\.dll$" "^libstdc\\+\\+-6\\.dll$" "^libwinpthread-1\\.dll$" "^Qt.*\\.dll$" "^libgstreamer-1\\.0-0\\.dll$" "^libgstbase-1\\.0-0\\.dll$" "^libgobject-2\\.0-0\\.dll$" "^libglib-2\\.0-0\\.dll$" "^libintl-8\\.dll$" "^libiconv-2\\.dll$"
+    #PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-" "^AVRT" "^avrt" "^MSVCP" "^VCRUNTIME" "^ucrtbase"
+    POST_EXCLUDE_REGEXES ".*system32/.*\\.dll" ".*SysWOW64/.*\\.dll" ".*Windows/.*\\.dll" ".*Microsoft.VC.*" ".*Qt.*\\.dll$"
+    DIRECTORIES ${QT_BIN_PATH} ${MSYS2_BIN_PATH} "C:/lxqt/lib" $ENV{PATH}
 )
 
+set(COPIED_DLLS 0)
 foreach(DLL ${DLLS})
     get_filename_component(DLL_NAME ${DLL} NAME)
-    message("Copying dependency: ${DLL_NAME}")
-    file(COPY ${DLL} DESTINATION ${OUTPUT_DIR})
+    get_filename_component(DLL_DIR ${DLL} DIRECTORY)
+    
+    # Skip if DLL is from the build directory (avoid copying to itself)
+    if("${DLL_DIR}" STREQUAL "${BUILD_DIR}")
+        message("  Skipping ${DLL_NAME} (already in build directory)")
+        continue()
+    endif()
+    
+    set(DEST_FILE "${OUTPUT_DIR}/${DLL_NAME}")
+    
+    # Check if we need to copy (file doesn't exist or is different)
+    set(SHOULD_COPY TRUE)
+    if(EXISTS ${DEST_FILE})
+        file(SIZE ${DLL} SOURCE_SIZE)
+        file(SIZE ${DEST_FILE} DEST_SIZE)
+        if(SOURCE_SIZE EQUAL DEST_SIZE)
+            file(TIMESTAMP ${DLL} SOURCE_TIME)
+            file(TIMESTAMP ${DEST_FILE} DEST_TIME)
+            if(NOT SOURCE_TIME IS_NEWER_THAN DEST_TIME)
+                set(SHOULD_COPY FALSE)
+            endif()
+        endif()
+    endif()
+    
+    if(SHOULD_COPY)
+        message("  Copying dependency: ${DLL_NAME}")
+        file(COPY ${DLL} DESTINATION ${OUTPUT_DIR})
+        math(EXPR COPIED_DLLS "${COPIED_DLLS} + 1")
+    else()
+        message("  Skipping ${DLL_NAME} (already up to date)")
+    endif()
 endforeach()
 
-list(LENGTH DLLS DLL_COUNT)
-message("Successfully copied ${DLL_COUNT} runtime DLL dependencies")
+list(LENGTH DLLS TOTAL_DLLS)
+message("Processed ${TOTAL_DLLS} runtime dependencies, copied ${COPIED_DLLS} files")
 
 # Step 3: Copy GStreamer plugins
 message("Copying GStreamer plugins...")
@@ -62,7 +137,8 @@ else()
     message(WARNING "No GStreamer plugins found in ${MSYS2_BIN_PATH}/../lib/gstreamer-1.0/")
 endif()
 
-# Step 4: Copy additional MinGW runtime DLLs that might be missed
+# Step 4: Manually copy the correct MSYS2 MinGW runtime DLLs.
+# This ensures the versions required by GStreamer/FFmpeg are used.
 set(ADDITIONAL_DLLS
     "libgcc_s_seh-1.dll"
     "libstdc++-6.dll"
@@ -73,9 +149,45 @@ set(ADDITIONAL_DLLS
     "libglib-2.0-0.dll"
     "libintl-8.dll"
     "libiconv-2.dll"
+    "libfdk-aac-2.dll"
+    "libfaad-2.dll"
+    "avfilter-10.dll"
+    "libopenal-1.dll"
+    "libgstaudio-1.0-0.dll"
+    "libgstvideo-1.0-0.dll"
+    "liborc-0.4-0.dll"
+    "libgstpbutils-1.0-0.dll"
+    "libgsttag-1.0-0.dll"
+    "libgstlibav.dll"
+    "libass-9.dll"
+    "libfontconfig-1.dll"
+    "libharfbuzz-0.dll"
+    "libexpat-1.dll"
+    "libfreetype-6.dll"
+    "libpng16-16.dll"
+    "libgraphite2.dll"
+    "libfribidi-0.dll"
+    "libunibreak-6.dll"
+    "liblcms2-2.dll"
+    "libvpl-2.dll"
+    "libzimg-2.dll"
+    "libdovi.dll"
+    "libshaderc_shared.dll"
+    "vulkan-1.dll"
+    "libvidstab.dll"
+    "libgomp-1.dll"
+    "postproc-58.dll"
+    "libplacebo-351.dll"
+    "libspirv-cross-c-shared.dll"
+    "libva.dll"
+    "libxml2-16.dll"
+    "libva_win32.dll"
+    "libpcre2-8-0.dll"
+    "libffi-8.dll"
+    "libgmodule-2.0-0.dll"
 )
 
-message("Copying additional MinGW runtime DLLs...")
+message("Copying additional MinGW runtime DLLs from MSYS2...")
 foreach(DLL_NAME ${ADDITIONAL_DLLS})
     set(DLL_PATH "${MSYS2_BIN_PATH}/${DLL_NAME}")
     if(EXISTS ${DLL_PATH})
@@ -83,5 +195,14 @@ foreach(DLL_NAME ${ADDITIONAL_DLLS})
         file(COPY ${DLL_PATH} DESTINATION ${OUTPUT_DIR})
     endif()
 endforeach()
+
+message("Copying GStreamer helper executables...")
+set(GST_LIBEXEC_PATH "${MSYS2_BIN_PATH}/../libexec/gstreamer-1.0")
+file(COPY "${GST_LIBEXEC_PATH}/gst-plugin-scanner.exe" DESTINATION "${OUTPUT_DIR}/libexec/gstreamer-1.0")
+file(COPY "${GST_LIBEXEC_PATH}/gst-ptp-helper.exe" DESTINATION "${OUTPUT_DIR}/libexec/gstreamer-1.0")
+
+message("Copying executables")
+file(COPY C:/msys64/mingw64/bin/iproxy.exe DESTINATION ${OUTPUT_DIR})
+
 
 message("=== Windows deployment completed ===")

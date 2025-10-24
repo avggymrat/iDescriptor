@@ -349,14 +349,15 @@ void AppsWidget::createAppCard(const QString &name, const QString &bundleId,
     // Install button placeholder
     ZLabel *installLabel = new ZLabel("Install");
     installLabel->setAlignment(Qt::AlignCenter);
-
-    ZLabel *downloadIpaLabel = new ZLabel("Download IPA");
-    downloadIpaLabel->setAlignment(Qt::AlignCenter);
-
     installLabel->setStyleSheet("font-size: 12px; color: #007AFF; font-weight: "
                                 "bold; background-color: transparent;");
     installLabel->setCursor(Qt::PointingHandCursor);
     installLabel->setFixedHeight(30);
+
+    ZLabel *downloadIpaLabel = new ZLabel("Download IPA");
+    downloadIpaLabel->setAlignment(Qt::AlignCenter);
+    downloadIpaLabel->setCursor(Qt::PointingHandCursor);
+
     connect(installLabel, &ZLabel::clicked, this,
             [this, name, bundleId, description]() {
                 onAppCardClicked(name, bundleId, description);

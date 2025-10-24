@@ -9,6 +9,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Platform-specific paths for libraries built from source
 if(WIN32)
+    include_directories("C:/msys64/mingw64/include")
+    link_directories("C:/msys64/mingw64/lib")
+    set(PKG_CONFIG_EXECUTABLE "C:/msys64/mingw64/bin/pkg-config.exe")
+    list(APPEND CMAKE_PREFIX_PATH "C:/lxqt")
     set(CUSTOM_LIB_PATH "C:/msys64/mingw64/lib")
     set(CUSTOM_BIN_PATH "C:/msys64/mingw64/bin")
     set(CUSTOM_INCLUDE_PATH "C:/msys64/mingw64/include")
@@ -31,25 +35,19 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia MultimediaWidgets Networ
 # Add QTermWidget
 pkg_check_modules(QTERMWIDGET REQUIRED IMPORTED_TARGET qtermwidget6)
 
-
-# Add Avahi for network device discovery
-if (APPLE)
-    # On macOS, use the built-in Bonjour framework instead of Avahi
-    find_library(CORE_SERVICES_FRAMEWORK CoreServices REQUIRED)
-    add_definitions(-DUSE_DNS_SD)
-    message(STATUS "Using macOS Bonjour framework for network service discovery")
-else()
-    # On Linux and Windows, use Avahi
-    add_definitions(-DUSE_AVAHI)
-    message(STATUS "Using Avahi for network service discovery")
-    pkg_check_modules(AVAHI_CLIENT REQUIRED IMPORTED_TARGET avahi-client)
+if(WIN32)
+    # Get the path to the Qt bin directory
+    get_target_property(QT_BIN_PATH Qt${QT_VERSION_MAJOR}::Core IMPORTED_LOCATION_RELEASE)
+    if(NOT QT_BIN_PATH)
+        get_target_property(QT_BIN_PATH Qt${QT_VERSION_MAJOR}::Core IMPORTED_LOCATION_DEBUG)
+    endif()
+    if(NOT QT_BIN_PATH)
+        get_target_property(QT_BIN_PATH Qt${QT_VERSION_MAJOR}::Core IMPORTED_LOCATION)
+    endif()
+    get_filename_component(QT_BIN_PATH ${QT_BIN_PATH} DIRECTORY)
+    message(STATUS "Found Qt bin directory: ${QT_BIN_PATH}")
 endif()
 
-# pkg_check_modules(AVAHI_CLIENT REQUIRED IMPORTED_TARGET avahi-client)
-# pkg_check_modules(AVAHI_COMMON REQUIRED IMPORTED_TARGET avahi-common)
-
-# Link directly to libraries in /usr/local/lib instead of using pkg-config
-# Force NO_DEFAULT_PATH to only search in /usr/local/lib
 find_library(IMOBILEDEVICE_LIBRARY 
     NAMES imobiledevice-1.0
     PATHS ${CUSTOM_LIB_PATH}
@@ -63,13 +61,6 @@ find_library(IMOBILEDEVICE_GLUE_LIBRARY
     NO_DEFAULT_PATH
     REQUIRED
 )
-
-# find_library(PLIST_LIBRARY 
-#     NAMES plist-2.0
-#     PATHS /usr/local/lib
-#     NO_DEFAULT_PATH
-#     REQUIRED
-# )
 
 find_library(TATSU_LIBRARY 
     NAMES tatsu
@@ -89,18 +80,10 @@ find_library(IRECOVERY_LIBRARY
     REQUIRED
 )
 
-# # Add missing libraries
-# find_library(USBMUXD_LIBRARY 
-#     NAMES usbmuxd-2.0
-#     PATHS /usr/local/lib
-#     NO_DEFAULT_PATH
-#     REQUIRED
-# )
-
 if(WIN32)
     # On MSYS2, these are found in the standard mingw64 prefix
-    find_library(SSL_LIBRARY NAMES ssl REQUIRED)
-    find_library(CRYPTO_LIBRARY NAMES crypto REQUIRED)
+    find_library(SSL_LIBRARY NAMES ssl PATHS C:/msys64/mingw64/lib REQUIRED)
+    find_library(CRYPTO_LIBRARY NAMES crypto PATHS C:/msys64/mingw64/lib REQUIRED)
 else()
     find_library(SSL_LIBRARY 
         NAMES ssl
@@ -116,11 +99,7 @@ else()
 endif()
 
 # Add libssh for SSH connections
-find_library(SSH_LIBRARY 
-    NAMES ssh
-    PATHS ${CUSTOM_LIB_PATH} /usr/lib /usr/lib/x86_64-linux-gnu
-    REQUIRED
-)
+pkg_check_modules(SSH REQUIRED IMPORTED_TARGET libssh)
 
 # Apple-specific crypto libraries for SSH
 if(APPLE)
@@ -128,37 +107,11 @@ if(APPLE)
     find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
 endif()
 
-# Remove frida support for now
-# find_library(FRIDA_LIBRARY 
-#     NAMES frida-core
-#     PATHS /usr/local/lib /usr/lib /usr/lib/x86_64-linux-gnu
-#     REQUIRED
-# )
-
-# find_library(ZIP_LIBRARY 
-#     NAMES zip
-#     PATHS /usr/lib /usr/lib/x86_64-linux-gnu
-#     REQUIRED
-# )
-
 
 pkg_check_modules(PUGIXML REQUIRED IMPORTED_TARGET pugixml)
 pkg_check_modules(USB REQUIRED IMPORTED_TARGET libusb-1.0)
 pkg_check_modules(PLIST REQUIRED IMPORTED_TARGET libplist-2.0)
-# Use system plist library instead of manually built one - exclude /usr/local/lib
-# find_library(PLIST_LIBRARY 
-#     NAMES plist-2.0
-#     PATHS /usr/lib
-#     NO_DEFAULT_PATH
-#     REQUIRED
-# )
 
-# set(PROJECT_SOURCES
-#    src/*.cpp
-#    src/*.h
-#    src/*.ui
-#    resources.qrc
-# )
 
 file(GLOB PROJECT_SOURCES
 src/*.cpp
@@ -177,6 +130,16 @@ if(APPLE)
     )
 endif()
 
+if (WIN32)
+    list(APPEND PROJECT_SOURCES
+       src/core/services/dnssd/dnssd_service.cpp
+        src/core/services/dnssd/dnssd_service.h
+    )
+
+    file(GLOB WINDOWS_PLATFORM_SOURCES src/platform/windows/*.cpp src/platform/windows/*.h)
+    list(APPEND PROJECT_SOURCES ${WINDOWS_PLATFORM_SOURCES})
+endif()
+
 if(LINUX)
     list(APPEND PROJECT_SOURCES
         src/core/services/avahi/avahi_service.cpp
@@ -189,9 +152,9 @@ endif()
 add_subdirectory(lib/airplay)
 add_subdirectory(lib/ipatool-go)
 
+
 if (WIN32)
-# todo
-    set(app_icon_resource_windows "${CMAKE_CURRENT_SOURCE_DIR}/resources/todo.rc")
+    set(app_icon_resource_windows "${CMAKE_CURRENT_SOURCE_DIR}/idescriptor.rc")
     qt_add_executable(iDescriptor
     MANUAL_FINALIZATION
     ${PROJECT_SOURCES}
@@ -228,14 +191,11 @@ target_link_libraries(iDescriptor PRIVATE
     Qt6::QuickControls2
     ${IMOBILEDEVICE_LIBRARY}
     ${IMOBILEDEVICE_GLUE_LIBRARY}
-    # ${PLIST_LIBRARY}
     ${TATSU_LIBRARY}
     ${IRECOVERY_LIBRARY}
     ${SSL_LIBRARY}
     ${CRYPTO_LIBRARY}
-    ${SSH_LIBRARY}
-    # ${FRIDA_LIBRARY}
-    # ${ZIP_LIBRARY}
+    PkgConfig::SSH
     PkgConfig::PUGIXML
     PkgConfig::USB
     PkgConfig::PLIST
@@ -246,16 +206,24 @@ target_link_libraries(iDescriptor PRIVATE
     airplay
     ipatool-go
 )
-
-if(NOT APPLE)
+    
+if(APPLE)
+    find_library(CORE_SERVICES_FRAMEWORK CoreServices REQUIRED)
     target_link_libraries(iDescriptor PRIVATE
-        PkgConfig::AVAHI_CLIENT
-        # PkgConfig::AVAHI_COMMON
-    )
+    ${CORE_SERVICES_FRAMEWORK})
+    message(STATUS "Using macOS Bonjour framework for network service discovery")
+endif()
+elseif (WIN32)
+    find_path(DNSSD_INCLUDE_DIR dns_sd.h HINTS ${BONJOUR_SDK}/Include ) 
+    target_include_directories( iDescriptor PRIVATE ${DNSSD_INCLUDE_DIR} )
+    message( STATUS "Using Bonjour SDK for network service discovery" )
+endif()
 else()
     target_link_libraries(iDescriptor PRIVATE
-        ${CORE_SERVICES_FRAMEWORK}
+    PkgConfig::AVAHI_CLIENT
+    # PkgConfig::AVAHI_COMMON
     )
+    message(STATUS "Using Avahi for network service discovery")
 endif()
 
 
@@ -285,26 +253,94 @@ set_target_properties(iDescriptor PROPERTIES
 )
 
 include(GNUInstallDirs)
-install(TARGETS iDescriptor
-    BUNDLE DESTINATION .
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
+
+# Set the installation directory to be within the build folder
+set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/dist")
 
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(iDescriptor)
 endif()
 
 # Copy runtime DLLs to build directory after building
-if(WIN32)
+if(WIN32 AND NOT DEFINED NO_DEPLOY)
     add_custom_command(TARGET iDescriptor POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E echo "Starting Windows deployment..."
         COMMAND ${CMAKE_COMMAND}
-            -DEXECUTABLE_PATH=${CMAKE_CURRENT_BINARY_DIR}/iDescriptor.exe
-            -DMSYS2_BIN_PATH=${CUSTOM_BIN_PATH}
-            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -DEXECUTABLE_PATH=$<TARGET_FILE:iDescriptor>
+            -DQT_BIN_PATH=${QT_BIN_PATH}
+            -DMSYS2_BIN_PATH=C:/msys64/mingw64/bin
+            -DOUTPUT_DIR=$<TARGET_FILE_DIR:iDescriptor>
+            -DQML_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/qml
             -P ${CMAKE_CURRENT_LIST_DIR}/cmake/win-deploy.cmake
         COMMENT "Deploying Windows application with all dependencies"
         VERBATIM
     )
 endif()
+
+if(WIN32)
+    install(CODE "
+        message(STATUS \"Deploying dependencies to installation directory for packaging...\")
+        message(STATUS \"CMAKE_INSTALL_PREFIX: \${CMAKE_INSTALL_PREFIX}\")
+        # copy executable to dist dir
+        file(MAKE_DIRECTORY \"\${CMAKE_INSTALL_PREFIX}\")
+        # file(COPY <TARGET_FILE:iDescriptor> DESTINATION CMAKE_INSTALL_PREFIX)
+        file(COPY ${CMAKE_CURRENT_BINARY_DIR}/iDescriptor.exe DESTINATION ${CMAKE_INSTALL_PREFIX})
+        # Check if file exists before deployment
+        set(EXECUTABLE_PATH \"\${CMAKE_INSTALL_PREFIX}/iDescriptor.exe\")
+        message(STATUS \"Looking for executable at: \${EXECUTABLE_PATH}\")
+        
+        if(EXISTS \"\${EXECUTABLE_PATH}\")
+            message(STATUS \"SUCCESS: Executable found at \${EXECUTABLE_PATH}\")
+        else()
+            message(STATUS \"ERROR: Executable NOT found at \${EXECUTABLE_PATH}\")
+        endif()
+        
+        execute_process(
+            COMMAND \"${CMAKE_COMMAND}\"
+                -DEXECUTABLE_PATH=\${EXECUTABLE_PATH}
+                -DQT_BIN_PATH=\"${QT_BIN_PATH}\"
+                -DMSYS2_BIN_PATH=\"C:/msys64/mingw64/bin\"
+                -DOUTPUT_DIR=\"\${CMAKE_INSTALL_PREFIX}\"
+                -DQML_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/qml\"
+                -P \"${CMAKE_CURRENT_LIST_DIR}/cmake/win-deploy.cmake\"
+        )
+    ")
+endif()
+
+# Packaging Configuration (CPack)
+set(CPACK_PACKAGE_NAME ${PROJECT_NAME})
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_WIX_VERSION 4)
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "iDescriptor Application")
+set(CPACK_PACKAGE_VENDOR "iDescriptor")
+set(CPACK_PACKAGE_CONTACT "support@idescriptor.com")
+
+set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_BINARY_DIR}/artifacts")
+
+if(WIN32)
+    set(CPACK_GENERATOR "WIX;ZIP")
+
+    string(UUID CPACK_WIX_PRODUCT_GUID NAMESPACE "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d" NAME "${PROJECT_NAME}" TYPE MD5)
+    string(UUID CPACK_WIX_UPGRADE_GUID NAMESPACE "d6c5b4a3-f2e1-d0c9-b8a7-f6e5d4c3b2a1" NAME "${PROJECT_NAME}" TYPE MD5)
+    set(CPACK_WIX_UI_REF "WixUI_InstallDir")
+    set(CPACK_WIX_INSTALL_SCOPE "perMachine")
+    set(CPACK_WIX_PROGRAM_MENU_FOLDER "${PROJECT_NAME}")
+    set(CPACK_PACKAGE_EXECUTABLES "iDescriptor" "iDescriptor")
+    set(CPACK_WIX_CREATE_DESKTOP_SHORTCUT "iDescriptor")
+    set(CPACK_WIX_PRODUCT_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/app-icon/icon.ico")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.rtf")
+        set(CPACK_WIX_LICENSE_RTF "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.rtf")
+    endif()
+    set(CPACK_WIX_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}-win64-setup")
+
+    set(CPACK_ARCHIVE_COMPONENT_INSTALL TRUE)
+    set(CPACK_ARCHIVE_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}-win64-portable")
+    
+    # Tell CPack to use the pre-built dist directory
+    set(CPACK_INSTALLED_DIRECTORIES "${CMAKE_INSTALL_PREFIX};.")
+    
+    # Prevent CPack from running install again
+    set(CPACK_INSTALL_CMAKE_PROJECTS "")
+endif()
+
+include(CPack)

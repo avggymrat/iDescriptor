@@ -1,12 +1,16 @@
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif
+#include <stdlib.h>
+#define _GNU_SOURCE 1
+#define __USE_GNU 1
+#include <dirent.h>
 #include <errno.h>
+#include <getopt.h>
 #include <inttypes.h>
 #include <libgen.h>
 #include <limits.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -14,11 +18,16 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#ifndef WIN32
+#include <signal.h>
+#endif
 
 #include <libimobiledevice/afc.h>
 #include <libimobiledevice/installation_proxy.h>
 #include <libimobiledevice/libimobiledevice.h>
 #include <libimobiledevice/lockdown.h>
+#include <libimobiledevice/notification_proxy.h>
+
 
 #include <plist/plist.h>
 

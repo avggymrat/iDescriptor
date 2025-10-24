@@ -14,7 +14,7 @@ void WelcomeWidget::setupUI()
 {
     // Main layout with proper spacing and margins
     m_mainLayout = new QVBoxLayout(this);
-    m_mainLayout->setContentsMargins(40, 60, 40, 60);
+    m_mainLayout->setContentsMargins(5, 5, 5, 5);
     m_mainLayout->setSpacing(0);
 
     // Add top stretch
@@ -34,21 +34,22 @@ void WelcomeWidget::setupUI()
                      palette.color(QPalette::WindowText).lighter(140));
     m_subtitleLabel->setPalette(palette);
     m_mainLayout->addWidget(m_subtitleLabel);
-    m_mainLayout->addSpacing(40);
+    m_mainLayout->addSpacing(10);
 
     m_imageLabel = new ResponsiveQLabel();
     m_imageLabel->setPixmap(QPixmap(":/resources/connect.png"));
     // Let the pixmap scale while preserving aspect ratio
     m_imageLabel->setScaledContents(true);
     // Prefer centered, not full-width expansion
-    m_imageLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    m_imageLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     // Cap size so it stays nicely centered on large windows
-    m_imageLabel->setMaximumSize(480, 320);
+    // m_imageLabel->setMaximumSize(480, 320);
+
     m_imageLabel->setStyleSheet("background: transparent; border: none;");
 
     m_imageLabel->setAlignment(Qt::AlignCenter);
     m_mainLayout->addWidget(m_imageLabel, 0, Qt::AlignHCenter);
-    m_mainLayout->addSpacing(32);
+    m_mainLayout->addSpacing(10);
 
     // Instruction text
     m_instructionLabel = createStyledLabel(
@@ -60,7 +61,7 @@ void WelcomeWidget::setupUI()
         instructionPalette.color(QPalette::WindowText).lighter(120));
     m_instructionLabel->setPalette(instructionPalette);
     m_mainLayout->addWidget(m_instructionLabel);
-    m_mainLayout->addSpacing(24);
+    m_mainLayout->addSpacing(10);
 
     // GitHub link
     m_githubLabel =

@@ -29,6 +29,10 @@
 #include <QMessageBox>
 #include <libusb-1.0/libusb.h>
 
+#ifdef WIN32
+#include "platform/windows/diagnose_widget.h"
+#endif
+
 void handleCallback(const idevice_event_t *event, void *userData)
 {
     printf("Device event received: ");
@@ -134,6 +138,25 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Welcome page (shown when no devices are connected)
     WelcomeWidget *welcomePage = new WelcomeWidget(this);
+    // No devices page
+    QWidget *noDevicesPage = new QWidget();
+    QVBoxLayout *noDeviceLayout = new QVBoxLayout(noDevicesPage);
+    noDeviceLayout->addStretch();
+    QHBoxLayout *labelLayout = new QHBoxLayout();
+    labelLayout->addStretch();
+    QLabel *noDeviceLabel = new QLabel("No devices detected");
+    noDeviceLabel->setAlignment(Qt::AlignCenter);
+    labelLayout->addWidget(noDeviceLabel);
+    labelLayout->addStretch();
+    noDeviceLayout->addLayout(labelLayout);
+
+#ifdef WIN32
+    // Add diagnose widget to check dependencies
+    // DiagnoseWidget *diagnoseWidget = new DiagnoseWidget();
+    // noDeviceLayout->addWidget(diagnoseWidget);
+#endif
+
+    noDeviceLayout->addStretch();
 
     m_deviceManager = new DeviceManagerWidget(this);
 
