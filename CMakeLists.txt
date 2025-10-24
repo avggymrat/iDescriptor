@@ -29,6 +29,19 @@ endif()
 
 include_directories(${CUSTOM_INCLUDE_PATH})
 
+
+foreach(_ IN LISTS CMAKE_PREFIX_PATH)
+    list(APPEND _qt_pkg_dirs
+        "${_}/lib/pkgconfig"
+        "${_}/lib64/pkgconfig"
+        "${_}/lib64/qt/pkgconfig"
+        "${_}/lib/qt/pkgconfig"
+    )
+endforeach()
+
+
+list(APPEND _qt_pkg_dirs ${CUSTOM_PKGCONFIG_PATH})
+ 
 find_package(PkgConfig REQUIRED)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia MultimediaWidgets Network QuickControls2 SerialPort Positioning Location QuickWidgets) 
 
@@ -80,6 +93,13 @@ find_library(IRECOVERY_LIBRARY
     REQUIRED
 )
 
+find_library(USBMUXD_LIBRARY 
+    NAMES usbmuxd-2.0
+    PATHS ${CUSTOM_LIB_PATH}
+    NO_DEFAULT_PATH
+    REQUIRED
+)
+
 if(WIN32)
     # On MSYS2, these are found in the standard mingw64 prefix
     find_library(SSL_LIBRARY NAMES ssl PATHS C:/msys64/mingw64/lib REQUIRED)
@@ -111,6 +131,7 @@ endif()
 pkg_check_modules(PUGIXML REQUIRED IMPORTED_TARGET pugixml)
 pkg_check_modules(USB REQUIRED IMPORTED_TARGET libusb-1.0)
 pkg_check_modules(PLIST REQUIRED IMPORTED_TARGET libplist-2.0)
+pkg_check_modules(AVAHI_CLIENT REQUIRED IMPORTED_TARGET avahi-client)
 
 
 file(GLOB PROJECT_SOURCES
@@ -196,6 +217,8 @@ target_link_libraries(iDescriptor PRIVATE
     ${SSL_LIBRARY}
     ${CRYPTO_LIBRARY}
     PkgConfig::SSH
+    ${SSH_LIBRARY}
+    ${USBMUXD_LIBRARY}
     PkgConfig::PUGIXML
     PkgConfig::USB
     PkgConfig::PLIST

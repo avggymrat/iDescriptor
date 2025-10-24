@@ -117,14 +117,14 @@ jobs:
           pushd lxqt-build-tools
           mkdir build && cd build
           cmake ..
-          sudo make install
+          make install
           popd
 
           git clone https://github.com/uncor3/qtermwidget.git
           pushd qtermwidget
           mkdir build && cd build
           cmake ..
-          sudo make install
+          make install
           popd
 
       - name: Build libimobiledevice suite (versioned tarballs)
