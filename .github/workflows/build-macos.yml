@@ -24,16 +24,15 @@ jobs:
           token: ${{ secrets.PAT }}
 
       - name: Install Qt
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@v3
         with:
-          version: ${{ env.QT_VERSION }}
-          modules: "qtmultimedia qtlocation qtpositioning qtserialport"
+          aqtversion: "==3.1.*"
+          version: "6.7.2"
+          host: "mac"
           target: "desktop"
           arch: "clang_64"
-          use-official: true
-          email: ${{ secrets.QT_EMAIL }}
-          pw: ${{ secrets.QT_PW }}
-          dir: "./"
+          modules: "qtlocation qtmultimedia qtpositioning qtserialbus"
+
       - name: Update pkgconfig path
         run: |
           ls "${QT_ROOT_DIR}/lib/pkgconfig"
