@@ -142,7 +142,6 @@ endif()
 pkg_check_modules(PUGIXML REQUIRED IMPORTED_TARGET pugixml)
 pkg_check_modules(USB REQUIRED IMPORTED_TARGET libusb-1.0)
 pkg_check_modules(PLIST REQUIRED IMPORTED_TARGET libplist-2.0)
-pkg_check_modules(AVAHI_CLIENT REQUIRED IMPORTED_TARGET avahi-client)
 
 
 file(GLOB PROJECT_SOURCES
@@ -251,6 +250,8 @@ elseif (WIN32)
     target_include_directories( iDescriptor PRIVATE ${DNSSD_INCLUDE_DIR} )
     message( STATUS "Using Bonjour SDK for network service discovery" )
 else()
+    pkg_check_modules(AVAHI_CLIENT REQUIRED IMPORTED_TARGET avahi-client)
+
     target_link_libraries(iDescriptor PRIVATE
     PkgConfig::AVAHI_CLIENT
     # PkgConfig::AVAHI_COMMON
