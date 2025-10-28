@@ -27,7 +27,6 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
-#include <libusb-1.0/libusb.h>
 
 #ifdef WIN32
 #include "platform/windows/diagnose_widget.h"
@@ -231,13 +230,18 @@ MainWindow::MainWindow(QWidget *parent)
         irecv_device_event_subscribe(&context, handleCallbackRecovery, nullptr);
 
     if (res_recovery != IRECV_E_SUCCESS) {
-        printf("ERROR: Unable to subscribe to recovery device events.\n");
+        qDebug() << "ERROR: Unable to subscribe to recovery device events. "
+                    "Error code:"
+                 << res_recovery;
     }
+    qDebug() << "Subscribed to recovery device events successfully.";
 
     idevice_error_t res = idevice_event_subscribe(handleCallback, nullptr);
     if (res != IDEVICE_E_SUCCESS) {
-        printf("ERROR: Unable to subscribe to device events.\n");
+        qDebug() << "ERROR: Unable to subscribe to device events. Error code:"
+                 << res;
     }
+    qDebug() << "Subscribed to device events successfully.";
     createMenus();
 }
 
