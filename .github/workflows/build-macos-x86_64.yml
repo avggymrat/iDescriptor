@@ -1,4 +1,4 @@
-name: Build macOS
+name: Build macOS x86_64
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ env:
 
 jobs:
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-15-intel
 
     steps:
       - name: Checkout repository
@@ -129,7 +129,7 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DRUN_CLANG_TIDY=OFF -DCMAKE_OSX_ARCHITECTURES=x86_64
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DRUN_CLANG_TIDY=OFF
 
       - name: Build with CMake
         run: cmake --build build --config Release
