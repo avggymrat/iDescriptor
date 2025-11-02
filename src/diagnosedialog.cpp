@@ -1,4 +1,4 @@
-#include "diagnose_dialog.h"
+#include "diagnosedialog.h"
 #include <QApplication>
 
 DiagnoseDialog::DiagnoseDialog(QWidget *parent) : QDialog(parent)

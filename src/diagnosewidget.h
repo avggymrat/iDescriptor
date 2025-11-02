@@ -10,7 +10,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
-#include "../../qprocessindicator.h"
+#include "qprocessindicator.h"
 
 class DependencyItem : public QWidget
 {
@@ -55,6 +55,10 @@ private slots:
 private:
     void setupUI();
     void addDependencyItem(const QString &name, const QString &description);
+
+#ifdef __linux__
+    bool checkUdevRulesInstalled();
+#endif
 
     QVBoxLayout *m_mainLayout;
     QVBoxLayout *m_itemsLayout;

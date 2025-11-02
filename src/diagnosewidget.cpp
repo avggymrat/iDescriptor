@@ -1,12 +1,16 @@
-#include "diagnose_widget.h"
+#include "diagnosewidget.h"
 #ifdef WIN32
-#include "check_deps.h"
+#include "platform/windows/check_deps.h"
 #endif
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDesktopServices>
+#include <QDir>
+#include <QFile>
 #include <QMessageBox>
 #include <QProcess>
+#include <QRegularExpression>
+#include <QTextStream>
 #include <QTimer>
 #include <QUrl>
 
@@ -118,6 +122,12 @@ DiagnoseWidget::DiagnoseWidget(QWidget *parent)
                       "Required for filesystem operations and mounting");
 #endif
 
+#ifdef __linux__
+    // Add Linux-specific dependency items
+    addDependencyItem("USB Device Permissions",
+                      "Required for recovery device access (udev rules)");
+#endif
+
     // Auto-check on startup
     QTimer::singleShot(100, this, [this]() { checkDependencies(); });
 }
@@ -206,6 +216,12 @@ void DiagnoseWidget::checkDependencies(bool autoExpand)
                 installed = IsAppleMobileDeviceSupportInstalled();
             } else if (itemName == "WinFsp") {
                 installed = IsWinFspInstalled();
+            }
+#endif
+
+#ifdef __linux__
+            if (itemName == "USB Device Permissions") {
+                installed = checkUdevRulesInstalled();
             }
 #endif
 
@@ -354,7 +370,147 @@ void DiagnoseWidget::onInstallRequested(const QString &name)
         installProcess->start("powershell.exe", args);
     }
 #endif
+
+#ifdef __linux__
+    if (name == "USB Device Permissions") {
+        DependencyItem *itemToInstall = nullptr;
+        for (DependencyItem *item : m_dependencyItems) {
+            if (item->property("name").toString() == name) {
+                itemToInstall = item;
+                break;
+            }
+        }
+
+        if (!itemToInstall)
+            return;
+
+        itemToInstall->setInstalling(true);
+
+        // Create a temporary script to set up udev rules
+        QString scriptPath = QDir::temp().filePath("setup-idevice-udev.sh");
+        QFile scriptFile(scriptPath);
+
+        if (!scriptFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QMessageBox::critical(this, "Error",
+                                  "Failed to create installation script");
+            itemToInstall->setInstalling(false);
+            return;
+        }
+
+        // FIXME: maybe, can be handled better
+        QTextStream out(&scriptFile);
+        out << "#!/bin/bash\n";
+        out << "set -e\n\n";
+        out << "# Create udev rules file\n";
+        out << "echo 'SUBSYSTEM==\"usb\", ATTR{idVendor}==\"05ac\", "
+               "MODE=\"0666\"' | tee /etc/udev/rules.d/99-idevice.rules > "
+               "/dev/null\n\n";
+        out << "# Create idevice group if it doesn't exist\n";
+        out << "if ! getent group idevice > /dev/null 2>&1; then\n";
+        out << "    groupadd idevice\n";
+        out << "fi\n\n";
+        out << "# Add current user to idevice group\n";
+        out << "usermod -aG idevice $SUDO_USER\n\n";
+        out << "# Reload udev rules\n";
+        out << "udevadm control --reload-rules\n";
+        out << "udevadm trigger\n\n";
+        out << "echo 'USB device permissions configured successfully!'\n";
+        out << "echo 'Note: You may need to log out and log back in for group "
+               "changes to take effect.'\n";
+        scriptFile.close();
+
+        // Make script executable
+        QFile::setPermissions(scriptPath, QFileDevice::ReadOwner |
+                                              QFileDevice::WriteOwner |
+                                              QFileDevice::ExeOwner);
+
+        QProcess *installProcess = new QProcess(this);
+        connect(
+            installProcess, &QProcess::finished, this,
+            [this, installProcess, itemToInstall,
+             scriptPath](int exitCode, QProcess::ExitStatus exitStatus) {
+                // Clean up temporary script
+                QFile::remove(scriptPath);
+
+                if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+                    QString errorOutput =
+                        installProcess->readAllStandardError();
+                    if (errorOutput.isEmpty()) {
+                        errorOutput = installProcess->readAllStandardOutput();
+                    }
+                    QMessageBox::warning(
+                        this, "Installation Failed",
+                        "Failed to configure USB device permissions. "
+                        "This might be because the action was cancelled or an "
+                        "error occurred.\n\nDetails: " +
+                            errorOutput.trimmed());
+                    checkDependencies(false);
+                } else {
+                    QMessageBox::information(
+                        this, "Installation Complete",
+                        "USB device permissions have been configured.\n\n"
+                        "Note: You may need to log out and log back in for "
+                        "group membership changes to take full effect.");
+                    checkDependencies(false);
+                }
+                itemToInstall->setInstalling(false);
+                installProcess->deleteLater();
+            });
+
+        QStringList args;
+        args << scriptPath;
+        installProcess->start("pkexec", args);
+    }
+#endif
 }
+
+#ifdef __linux__
+bool DiagnoseWidget::checkUdevRulesInstalled()
+{
+    // Check if udev rules file exists
+    QFile rulesFile("/etc/udev/rules.d/99-idevice.rules");
+    if (!rulesFile.exists()) {
+        return false;
+    }
+
+    // Check if the file contains the correct rule
+    if (!rulesFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return false;
+    }
+
+    QTextStream in(&rulesFile);
+    QString content = in.readAll();
+    rulesFile.close();
+
+    // Check for the essential parts of the rule
+    bool hasUsbSubsystem = content.contains("SUBSYSTEM==\"usb\"");
+    bool hasAppleVendor = content.contains("ATTR{idVendor}==\"05ac\"");
+    bool hasMode = content.contains("MODE=\"0666\"");
+
+    if (!hasUsbSubsystem || !hasAppleVendor || !hasMode) {
+        return false;
+    }
+
+    // Check if current user is in the idevice group
+    QProcess groupsProcess;
+    groupsProcess.start("groups");
+    groupsProcess.waitForFinished(3000);
+
+    if (groupsProcess.exitCode() != 0) {
+        // If we can't check groups, consider it not installed
+        return false;
+    }
+
+    QString groupsOutput =
+        QString::fromUtf8(groupsProcess.readAllStandardOutput()).trimmed();
+    QStringList groups =
+        groupsOutput.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+
+    bool isInIdeviceGroup = groups.contains("idevice");
+
+    return isInIdeviceGroup;
+}
+#endif
 
 void DiagnoseWidget::onToggleExpand()
 {

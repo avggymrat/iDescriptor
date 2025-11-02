@@ -1,4 +1,5 @@
 #include "welcomewidget.h"
+#include "diagnosewidget.h"
 #include "iDescriptor-ui.h"
 #include "responsiveqlabel.h"
 #include <QApplication>
@@ -8,10 +9,6 @@
 #include <QMouseEvent>
 #include <QPalette>
 #include <QUrl>
-
-#ifdef WIN32
-#include "platform/windows/diagnose_widget.h"
-#endif
 
 WelcomeWidget::WelcomeWidget(QWidget *parent) : QWidget(parent) { setupUI(); }
 

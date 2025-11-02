@@ -1,12 +1,11 @@
 #ifndef DIAGNOSE_DIALOG_H
 #define DIAGNOSE_DIALOG_H
 
-#include "diagnose_widget.h"
+#include "diagnosewidget.h"
 #include <QDialog>
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QVBoxLayout>
-
 
 class DiagnoseDialog : public QDialog
 {
