@@ -190,6 +190,7 @@ add_subdirectory(lib/ipatool-go)
 add_subdirectory(lib/zupdater)
 
 if (WIN32) 
+    set(NO_DEPLOY_WIN_IFUSE ON) 
     add_subdirectory(lib/win-ifuse)
 endif()
 
@@ -320,6 +321,8 @@ if(WIN32 AND NOT DEFINED NO_DEPLOY)
             -DMSYS2_BIN_PATH=C:/msys64/mingw64/bin
             -DOUTPUT_DIR=$<TARGET_FILE_DIR:iDescriptor>
             -DQML_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/qml
+            -DPROJECT_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -DWIN_IFUSE=$<TARGET_FILE:win-ifuse>
             -P ${CMAKE_CURRENT_LIST_DIR}/cmake/win-deploy.cmake
         COMMENT "Deploying Windows application with all dependencies"
         VERBATIM
@@ -351,6 +354,8 @@ if(WIN32)
                 -DMSYS2_BIN_PATH=\"C:/msys64/mingw64/bin\"
                 -DOUTPUT_DIR=\"\${CMAKE_INSTALL_PREFIX}\"
                 -DQML_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/qml\"
+                -DPROJECT_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"
+                -DWIN_IFUSE=$<TARGET_FILE:win-ifuse>
                 -P \"${CMAKE_CURRENT_LIST_DIR}/cmake/win-deploy.cmake\"
         )
     ")
@@ -394,13 +399,3 @@ endif()
 
 include(CPack)
 
-
-# FIXME: move to win-deploy.cmake
-if(WIN32)
-    add_custom_command(TARGET iDescriptor POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-            $<TARGET_FILE:win-ifuse>
-            $<TARGET_FILE_DIR:iDescriptor>
-    COMMENT "Copying win-ifuse executable to output directory"
-    )
-endif()

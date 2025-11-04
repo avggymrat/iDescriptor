@@ -9,6 +9,7 @@ string(REPLACE "\"" "" MSYS2_BIN_PATH "${MSYS2_BIN_PATH}")
 if(QML_SOURCE_DIR)
     string(REPLACE "\"" "" QML_SOURCE_DIR "${QML_SOURCE_DIR}")
 endif()
+string(REPLACE "\"" "" PROJECT_SOURCE_DIR "${PROJECT_SOURCE_DIR}")
 
 message("=== Starting Windows deployment for: ${EXECUTABLE_PATH} ===")
 message("Debug info:")
@@ -233,9 +234,11 @@ message("Copying executables")
 file(COPY C:/msys64/mingw64/bin/iproxy.exe DESTINATION ${OUTPUT_DIR})
 
 message("Copying required scripts")
-file(COPY "${CMAKE_SOURCE_DIR}/install-apple-drivers.ps1" DESTINATION ${OUTPUT_DIR})
-file(COPY "${CMAKE_SOURCE_DIR}/install-win-fsp.silent.bat" DESTINATION ${OUTPUT_DIR})
+file(COPY "${PROJECT_SOURCE_DIR}/install-apple-drivers.ps1" DESTINATION ${OUTPUT_DIR})
+file(COPY "${PROJECT_SOURCE_DIR}/install-win-fsp.silent.bat" DESTINATION ${OUTPUT_DIR})
 
+message("Copying win-ifuse executable")
+file(COPY "${WIN_IFUSE}" DESTINATION ${OUTPUT_DIR})
 
 message("Copying winfsp-x64.dll")
 file(COPY "C:/Program Files (x86)/WinFsp/bin/winfsp-x64.dll" DESTINATION ${OUTPUT_DIR})
