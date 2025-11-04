@@ -236,4 +236,8 @@ message("Copying required scripts")
 file(COPY "${CMAKE_SOURCE_DIR}/install-apple-drivers.ps1" DESTINATION ${OUTPUT_DIR})
 file(COPY "${CMAKE_SOURCE_DIR}/install-win-fsp.silent.bat" DESTINATION ${OUTPUT_DIR})
 
+
+message("Copying winfsp-x64.dll")
+file(COPY "C:/Program Files (x86)/WinFsp/bin/winfsp-x64.dll" DESTINATION ${OUTPUT_DIR})
+
 message("=== Windows deployment completed ===")

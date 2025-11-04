@@ -64,6 +64,12 @@ jobs:
           version: ${{ env.QT_VERSION }}
           modules: "qtmultimedia qtlocation qtpositioning qtserialport"
 
+      - name: Install WinFsp
+        shell: pwsh
+        run: |
+          choco install winfsp -y
+          refreshenv
+
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:

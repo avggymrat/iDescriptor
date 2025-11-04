@@ -189,6 +189,12 @@ add_subdirectory(lib/airplay)
 add_subdirectory(lib/ipatool-go)
 add_subdirectory(lib/zupdater)
 
+if (WIN32) 
+    add_subdirectory(lib/win-ifuse)
+endif()
+
+
+
 if (WIN32)
     set(app_icon_resource_windows "${CMAKE_CURRENT_SOURCE_DIR}/idescriptor.rc")
     qt_add_executable(iDescriptor
@@ -391,11 +397,10 @@ include(CPack)
 
 # FIXME: move to win-deploy.cmake
 if(WIN32)
-    # Ensure libZUpdater.dll is copied next to the main executable for deployment
     add_custom_command(TARGET iDescriptor POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-                $<TARGET_FILE:ZUpdater>
-                $<TARGET_FILE_DIR:iDescriptor>
-        COMMENT "Copying libZUpdater.dll to executable directory"
+    COMMAND ${CMAKE_COMMAND} -E copy
+            $<TARGET_FILE:win-ifuse>
+            $<TARGET_FILE_DIR:iDescriptor>
+    COMMENT "Copying win-ifuse executable to output directory"
     )
 endif()
