@@ -63,27 +63,23 @@ jobs:
         with:
           dotnet-version: "8.x"
 
-      - name: Install WiX Toolset
+      - name: Install WiX Toolset and Extensions
         shell: pwsh
         run: |
-          dotnet tool install --global wix --version 4.0.5
+          $wixToolDir = Join-Path $env:GITHUB_WORKSPACE "wix-tool"
+          dotnet tool install wix --version 4.0.5 --tool-path $wixToolDir
 
-      - name: Install WiX UI Extension
-        shell: pwsh
-        run: |
-          # ensure wix CLI is on PATH for this session and for subsequent steps
-          $dotnetTools = "$env:USERPROFILE\.dotnet\tools"
-          $env:PATH = "$dotnetTools;$env:PATH"
+          # Add the tool directory to the PATH for this step and subsequent steps
+          $env:PATH = "$wixToolDir;$env:PATH"
+          "PATH=$wixToolDir;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-          # install the extension globally so it's placed under %USERPROFILE%\.wix
+          # Add the UI extension globally so CPack can find it in the default location.
           wix extension add --global WixToolset.UI.wixext/4.0.5
           wix extension list
 
-          # export WIX and WIX_EXTENSIONS so CPack can find wix.exe and installed extensions
-          "WIX=$dotnetTools\wix.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          # Set environment variables for CPack
+          "WIX=$(Join-Path $wixToolDir 'wix.exe')" | Out-File -FilePath $env:GITHUB_ENV -Append
           "WIX_EXTENSIONS=$env:USERPROFILE" | Out-File -FilePath $env:GITHUB_ENV -Append
-          # make sure subsequent steps see the dotnet tools path
-          "PATH=$dotnetTools;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Set PKG_CONFIG environment variable
         run: echo "PKG_CONFIG_EXECUTABLE=C:/msys64/mingw64/bin/pkg-config.exe" >> $GITHUB_ENV
