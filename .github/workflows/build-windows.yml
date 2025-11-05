@@ -71,9 +71,19 @@ jobs:
       - name: Install WiX UI Extension
         shell: pwsh
         run: |
-          wix extension add WixToolset.UI.wixext/4.0.5
+          # ensure wix CLI is on PATH for this session and for subsequent steps
+          $dotnetTools = "$env:USERPROFILE\.dotnet\tools"
+          $env:PATH = "$dotnetTools;$env:PATH"
+
+          # install the extension globally so it's placed under %USERPROFILE%\.wix
+          wix extension add --global WixToolset.UI.wixext/4.0.5
           wix extension list
-          echo "WIX_EXTENSIONS=$env:USERPROFILE" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+          # export WIX and WIX_EXTENSIONS so CPack can find wix.exe and installed extensions
+          "WIX=$dotnetTools\wix.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "WIX_EXTENSIONS=$env:USERPROFILE" | Out-File -FilePath $env:GITHUB_ENV -Append
+          # make sure subsequent steps see the dotnet tools path
+          "PATH=$dotnetTools;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Set PKG_CONFIG environment variable
         run: echo "PKG_CONFIG_EXECUTABLE=C:/msys64/mingw64/bin/pkg-config.exe" >> $GITHUB_ENV
