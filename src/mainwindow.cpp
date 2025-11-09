@@ -193,9 +193,14 @@ MainWindow::MainWindow(QWidget *parent)
 
     ui->statusbar->addWidget(m_connectedDeviceCountLabel);
     ui->statusbar->setContentsMargins(0, 0, 0, 0);
-    ui->statusbar->addPermanentWidget(settingsButton);
     ui->statusbar->addPermanentWidget(githubButton);
+    ui->statusbar->addPermanentWidget(settingsButton);
 
+    QLabel *appVersionLabel = new QLabel(QString("v%1").arg(APP_VERSION));
+    appVersionLabel->setContentsMargins(5, 0, 5, 0);
+    appVersionLabel->setStyleSheet(
+        "QLabel:hover { background-color : #13131319; }");
+    ui->statusbar->addPermanentWidget(appVersionLabel);
 #ifdef __linux__
     QList<QString> mounted_iFusePaths = iFuseManager::getMountPoints();
 
@@ -239,6 +244,17 @@ MainWindow::MainWindow(QWidget *parent)
     // Example usage with customization
 
     UpdateProcedure updateProcedure;
+    bool packageManagerManaged = false;
+    bool isPortable = false;
+
+#ifdef WIN32
+    // dynamic portable detection read .portable file in app dir on Windows
+    QString appDir = QApplication::applicationDirPath();
+    QFile portableFile(appDir + "/.portable");
+    if (portableFile.exists()) {
+        isPortable = true;
+    }
+#endif
 
     switch (ZUpdater::detectPlatform()) {
     // todo: adjust for portable
@@ -261,8 +277,11 @@ MainWindow::MainWindow(QWidget *parent)
             "Do you want to install the downloaded update now?",
         };
         break;
-        // todo: adjust for pkg managers
     case Platform::Linux:
+        // currently only on linux (arch aur) is enabled
+#ifdef PACKAGE_MANAGER_MANAGED
+        packageManagerManaged = true;
+#endif
         updateProcedure = UpdateProcedure{
             false,
             true,
@@ -277,13 +296,9 @@ MainWindow::MainWindow(QWidget *parent)
         };
     }
 
-    m_updater = new ZUpdater("uncor3/libtest", APP_VERSION, "iDescriptor",
-                             updateProcedure,
-                             false, // isPortable - set to true if running
-                                    // portable version on Windows
-                             false, // isPackageManaged - set to true if
-                                    // installed via package manager on Linux
-                             this);
+    m_updater =
+        new ZUpdater("uncor3/libtest", APP_VERSION, "iDescriptor",
+                     updateProcedure, isPortable, packageManagerManaged, this);
     qDebug() << "Checking for updates...";
     SettingsManager::sharedInstance()->doIfEnabled(
         SettingsManager::Setting::AutoCheckUpdates,

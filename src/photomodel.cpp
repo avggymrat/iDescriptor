@@ -25,32 +25,36 @@
 #include <QEventLoop>
 #include <QIcon>
 #include <QImage>
+#include <QImageReader>
 #include <QMediaPlayer>
 #include <QPixmap>
 #include <QRegularExpression>
+#include <QSemaphore>
 #include <QTimer>
 #include <QVideoFrame>
 #include <QVideoSink>
 #include <QtConcurrent/QtConcurrent>
-#include <algorithm>
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/imgutils.h>
+#include <libswscale/swscale.h>
+}
 
-PhotoModel::PhotoModel(iDescriptorDevice *device, QObject *parent)
-    : QAbstractListModel(parent), m_device(device), m_thumbnailSize(256, 256),
-      m_sortOrder(NewestFirst), m_filterType(All)
+// Limit concurrent video thumbnail generation to 2 to prevent resource
+// exhaustion
+QSemaphore PhotoModel::m_videoThumbnailSemaphore(4);
+
+PhotoModel::PhotoModel(iDescriptorDevice *device, FilterType filterType,
+                       QObject *parent)
+    : QAbstractListModel(parent), m_device(device), m_thumbnailSize(64, 64),
+      m_sortOrder(NewestFirst), m_filterType(filterType)
 {
-    // Set up cache directory for persistent storage
-    m_cacheDir =
-        QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
-        "/photo_thumbs";
-    QDir().mkpath(m_cacheDir);
-
-    // Configure memory cache (150MB limit)
-    m_thumbnailCache.setMaxCost(150 * 1024 * 1024);
+    // 350 MB cache for thumbnails
+    m_thumbnailCache.setMaxCost(350 * 1024 * 1024);
 
     connect(this, &PhotoModel::thumbnailNeedsToBeLoaded, this,
             &PhotoModel::requestThumbnail, Qt::QueuedConnection);
-
-    // Don't populate paths in constructor - wait for setAlbumPath
 }
 
 PhotoModel::~PhotoModel()
@@ -67,59 +71,306 @@ PhotoModel::~PhotoModel()
     m_activeLoaders.clear();
     m_loadingPaths.clear();
     m_thumbnailCache.clear();
-    QDir(m_cacheDir).removeRecursively();
 }
 
-QPixmap PhotoModel::generateVideoThumbnail(iDescriptorDevice *device,
-                                           const QString &filePath,
-                                           const QSize &requestedSize)
+QPixmap PhotoModel::generateVideoThumbnailFFmpeg(iDescriptorDevice *device,
+                                                 const QString &filePath,
+                                                 const QSize &requestedSize)
 {
     QPixmap thumbnail;
-    QEventLoop loop;
 
-    // Use a timer to handle potential timeouts
-    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    uint64_t fileHandle = 0;
 
-    auto player = std::make_unique<QMediaPlayer>();
-    auto sink = std::make_unique<QVideoSink>();
-    player->setVideoSink(sink.get());
+    afc_error_t openResult = ServiceManager::safeAfcFileOpen(
+        device, filePath.toUtf8().constData(), AFC_FOPEN_RDONLY, &fileHandle);
 
-    // This lambda will be called when a frame is ready
-    QObject::connect(sink.get(), &QVideoSink::videoFrameChanged,
-                     [&](const QVideoFrame &frame) {
-                         if (frame.isValid()) {
-                             QImage img = frame.toImage();
-                             if (!img.isNull()) {
-                                 thumbnail = QPixmap::fromImage(img.scaled(
-                                     requestedSize, Qt::KeepAspectRatio,
-                                     Qt::SmoothTransformation));
-                             }
-                         }
-                         // We got our frame, so we can stop the loop
-                         if (loop.isRunning()) {
-                             loop.quit();
-                         }
-                     });
-
-    // Get the streaming URL and start playback
-    QUrl streamUrl = MediaStreamerManager::sharedInstance()->getStreamUrl(
-        device, device->afcClient, filePath);
-    if (streamUrl.isEmpty()) {
-        qWarning() << "Could not get stream URL for video thumbnail:"
-                   << filePath;
+    if (openResult != AFC_E_SUCCESS || fileHandle == 0) {
+        qWarning() << "Failed to open video file for thumbnail:" << filePath;
         return {};
     }
 
-    player->setSource(streamUrl);
-    player->setPosition(1000); // Seek 1 second in to get a good frame
-    player->play();            // Start playback to trigger frame capture
+    // Get file size
+    char **fileInfo = nullptr;
+    afc_error_t infoResult = ServiceManager::safeAfcGetFileInfo(
+        device, filePath.toUtf8().constData(), &fileInfo);
 
-    // Wait for the videoFrameChanged signal or timeout
-    loop.exec();
+    uint64_t fileSize = 0;
+    if (infoResult == AFC_E_SUCCESS && fileInfo) {
+        for (int i = 0; fileInfo[i]; i += 2) {
+            if (strcmp(fileInfo[i], "st_size") == 0) {
+                fileSize = strtoull(fileInfo[i + 1], nullptr, 10);
+                break;
+            }
+        }
+        afc_dictionary_free(fileInfo);
+    }
+
+    if (fileSize == 0) {
+        ServiceManager::safeAfcFileClose(device, fileHandle);
+        qWarning() << "Invalid video file size for thumbnail:" << filePath;
+        return {};
+    }
+
+    // Create custom AVIOContext for reading from device on-demand
+    AVFormatContext *formatCtx = avformat_alloc_context();
+    if (!formatCtx) {
+        ServiceManager::safeAfcFileClose(device, fileHandle);
+        qWarning() << "Failed to allocate format context";
+        return {};
+    }
+
+    // Context for streaming read from device
+    struct StreamContext {
+        iDescriptorDevice *device;
+        uint64_t fileHandle;
+        uint64_t fileSize;
+        uint64_t currentPos;
+    };
+
+    StreamContext *streamCtx =
+        new StreamContext{device, fileHandle, fileSize, 0};
+
+    // Custom read function that reads from device on-demand
+    auto readPacket = [](void *opaque, uint8_t *buf, int bufSize) -> int {
+        StreamContext *ctx = static_cast<StreamContext *>(opaque);
+
+        if (ctx->currentPos >= ctx->fileSize) {
+            return AVERROR_EOF;
+        }
+
+        uint32_t toRead =
+            std::min(static_cast<uint32_t>(bufSize),
+                     static_cast<uint32_t>(ctx->fileSize - ctx->currentPos));
+        uint32_t bytesRead = 0;
+
+        afc_error_t result = ServiceManager::safeAfcFileRead(
+            ctx->device, ctx->fileHandle, reinterpret_cast<char *>(buf), toRead,
+            &bytesRead);
+
+        if (result != AFC_E_SUCCESS || bytesRead == 0) {
+            return AVERROR(EIO);
+        }
+
+        ctx->currentPos += bytesRead;
+        return static_cast<int>(bytesRead);
+    };
+
+    // Custom seek function using AFC seek
+    auto seekPacket = [](void *opaque, int64_t offset, int whence) -> int64_t {
+        StreamContext *ctx = static_cast<StreamContext *>(opaque);
+
+        if (whence == AVSEEK_SIZE) {
+            return static_cast<int64_t>(ctx->fileSize);
+        }
+
+        int64_t newPos = 0;
+        int seekWhence = SEEK_SET;
+
+        if (whence == SEEK_SET) {
+            newPos = offset;
+            seekWhence = SEEK_SET;
+        } else if (whence == SEEK_CUR) {
+            newPos = static_cast<int64_t>(ctx->currentPos) + offset;
+            seekWhence = SEEK_SET;
+        } else if (whence == SEEK_END) {
+            newPos = static_cast<int64_t>(ctx->fileSize) + offset;
+            seekWhence = SEEK_SET;
+        } else {
+            return -1;
+        }
+
+        if (newPos < 0 || newPos > static_cast<int64_t>(ctx->fileSize)) {
+            return -1;
+        }
+
+        // Use AFC seek
+        afc_error_t result = ServiceManager::safeAfcFileSeek(
+            ctx->device, ctx->fileHandle, newPos, seekWhence);
+
+        if (result != AFC_E_SUCCESS) {
+            return -1;
+        }
+
+        ctx->currentPos = static_cast<uint64_t>(newPos);
+        return newPos;
+    };
+
+    const int avioBufferSize = 32768; // 32KB buffer for streaming
+    unsigned char *avioBuffer =
+        static_cast<unsigned char *>(av_malloc(avioBufferSize));
+    if (!avioBuffer) {
+        delete streamCtx;
+        ServiceManager::safeAfcFileClose(device, fileHandle);
+        avformat_free_context(formatCtx);
+        return {};
+    }
+
+    AVIOContext *avioCtx =
+        avio_alloc_context(avioBuffer, avioBufferSize, 0, streamCtx, readPacket,
+                           nullptr, seekPacket);
+
+    if (!avioCtx) {
+        av_free(avioBuffer);
+        delete streamCtx;
+        ServiceManager::safeAfcFileClose(device, fileHandle);
+        avformat_free_context(formatCtx);
+        return {};
+    }
+
+    formatCtx->pb = avioCtx;
+    formatCtx->flags |= AVFMT_FLAG_CUSTOM_IO;
+
+    // Open input
+    if (avformat_open_input(&formatCtx, nullptr, nullptr, nullptr) < 0) {
+        qWarning() << "Failed to open video format";
+        av_free(avioCtx->buffer);
+        avio_context_free(&avioCtx);
+        avformat_free_context(formatCtx);
+        return {};
+    }
+
+    // Find stream info
+    if (avformat_find_stream_info(formatCtx, nullptr) < 0) {
+        qWarning() << "Failed to find stream info";
+        avformat_close_input(&formatCtx);
+        av_free(avioCtx->buffer);
+        avio_context_free(&avioCtx);
+        return {};
+    }
+
+    // Find video stream
+    int videoStreamIndex = -1;
+    const AVCodec *codec = nullptr;
+    AVCodecParameters *codecParams = nullptr;
+
+    for (unsigned int i = 0; i < formatCtx->nb_streams; i++) {
+        if (formatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+            videoStreamIndex = i;
+            codecParams = formatCtx->streams[i]->codecpar;
+            codec = avcodec_find_decoder(codecParams->codec_id);
+            break;
+        }
+    }
+
+    if (videoStreamIndex == -1 || !codec) {
+        qWarning() << "No video stream found";
+        avformat_close_input(&formatCtx);
+        av_free(avioCtx->buffer);
+        avio_context_free(&avioCtx);
+        return {};
+    }
+
+    // Allocate codec context
+    AVCodecContext *codecCtx = avcodec_alloc_context3(codec);
+    if (!codecCtx) {
+        avformat_close_input(&formatCtx);
+        av_free(avioCtx->buffer);
+        avio_context_free(&avioCtx);
+        return {};
+    }
+
+    if (avcodec_parameters_to_context(codecCtx, codecParams) < 0) {
+        avcodec_free_context(&codecCtx);
+        avformat_close_input(&formatCtx);
+        av_free(avioCtx->buffer);
+        avio_context_free(&avioCtx);
+        return {};
+    }
+
+    // Open codec
+    if (avcodec_open2(codecCtx, codec, nullptr) < 0) {
+        avcodec_free_context(&codecCtx);
+        avformat_close_input(&formatCtx);
+        av_free(avioCtx->buffer);
+        avio_context_free(&avioCtx);
+        return {};
+    }
+
+    // Allocate frame
+    AVFrame *frame = av_frame_alloc();
+    AVPacket *packet = av_packet_alloc();
+
+    if (!frame || !packet) {
+        if (frame)
+            av_frame_free(&frame);
+        if (packet)
+            av_packet_free(&packet);
+        avcodec_free_context(&codecCtx);
+        avformat_close_input(&formatCtx);
+        av_free(avioCtx->buffer);
+        avio_context_free(&avioCtx);
+        return {};
+    }
+
+    // Read frames until we get a valid one
+    bool frameDecoded = false;
+    while (av_read_frame(formatCtx, packet) >= 0) {
+        if (packet->stream_index == videoStreamIndex) {
+            if (avcodec_send_packet(codecCtx, packet) >= 0) {
+                if (avcodec_receive_frame(codecCtx, frame) >= 0) {
+                    frameDecoded = true;
+                    av_packet_unref(packet);
+                    break;
+                }
+            }
+        }
+        av_packet_unref(packet);
+    }
+
+    if (frameDecoded) {
+        // Convert frame to RGB24
+        SwsContext *swsCtx =
+            sws_getContext(frame->width, frame->height,
+                           static_cast<AVPixelFormat>(frame->format),
+                           frame->width, frame->height, AV_PIX_FMT_RGB24,
+                           SWS_BILINEAR, nullptr, nullptr, nullptr);
+
+        if (swsCtx) {
+            AVFrame *rgbFrame = av_frame_alloc();
+            if (rgbFrame) {
+                rgbFrame->format = AV_PIX_FMT_RGB24;
+                rgbFrame->width = frame->width;
+                rgbFrame->height = frame->height;
+
+                if (av_frame_get_buffer(rgbFrame, 0) >= 0) {
+                    sws_scale(swsCtx, frame->data, frame->linesize, 0,
+                              frame->height, rgbFrame->data,
+                              rgbFrame->linesize);
+
+                    // Convert to QImage
+                    QImage img(rgbFrame->data[0], rgbFrame->width,
+                               rgbFrame->height, rgbFrame->linesize[0],
+                               QImage::Format_RGB888);
+
+                    // Create a deep copy since AVFrame will be freed
+                    QImage imgCopy = img.copy();
+
+                    // Scale to requested size
+                    thumbnail = QPixmap::fromImage(
+                        imgCopy.scaled(requestedSize, Qt::KeepAspectRatio,
+                                       Qt::SmoothTransformation));
+                }
+
+                av_frame_free(&rgbFrame);
+            }
+
+            sws_freeContext(swsCtx);
+        }
+    }
 
     // Cleanup
-    player->stop();
-    MediaStreamerManager::sharedInstance()->releaseStreamer(filePath);
+    av_frame_free(&frame);
+    av_packet_free(&packet);
+    avcodec_free_context(&codecCtx);
+    avformat_close_input(&formatCtx);
+
+    // Close the AFC file handle
+    ServiceManager::safeAfcFileClose(device, fileHandle);
+
+    // Free AVIO context and stream context
+    av_free(avioCtx->buffer);
+    avio_context_free(&avioCtx);
+    delete streamCtx;
 
     return thumbnail;
 }
@@ -147,27 +398,24 @@ QVariant PhotoModel::data(const QModelIndex &index, int role) const
     case Qt::DecorationRole: {
         qDebug() << "DecorationRole requested for index:" << index.row();
 
-        QString cacheKey = getThumbnailCacheKey(info.filePath);
-
-        // Check memory cache first (works for both images AND videos)
-        if (QPixmap *cached = m_thumbnailCache.object(cacheKey)) {
+        // Check memory cache first
+        if (QPixmap *cached = m_thumbnailCache.object(info.filePath)) {
             qDebug() << "Cache HIT for:" << info.fileName;
             return QIcon(*cached);
         }
 
-        // Prevent duplicate requests - this is CRITICAL for both images and
-        // videos
-        if (m_activeLoaders.contains(cacheKey) ||
-            m_loadingPaths.contains(info.filePath)) {
+        // Prevent duplicate requests
+        if (m_loadingPaths.contains(info.filePath) ||
+            m_activeLoaders.contains(info.filePath)) {
             qDebug() << "Already loading:" << info.fileName;
             // Return appropriate placeholder based on file type
             if (info.fileName.endsWith(".MOV", Qt::CaseInsensitive) ||
                 info.fileName.endsWith(".MP4", Qt::CaseInsensitive) ||
                 info.fileName.endsWith(".M4V", Qt::CaseInsensitive)) {
-                // return QIcon::fromTheme("video-x-generic");
                 return QIcon(":/resources/icons/video-x-generic.png");
             } else {
-                return QIcon::fromTheme("image-x-generic");
+                return QIcon(":/resources/icons/"
+                             "MaterialSymbolsLightImageOutlineSharp.png");
             }
         }
 
@@ -185,7 +433,8 @@ QVariant PhotoModel::data(const QModelIndex &index, int role) const
             // return QIcon::fromTheme("video-x-generic");
             return QIcon(":/resources/icons/video-x-generic.png");
         } else {
-            return QIcon::fromTheme("image-x-generic");
+            return QIcon(
+                ":/resources/icons/MaterialSymbolsLightImageOutlineSharp.png");
         }
     }
 
@@ -222,23 +471,6 @@ void PhotoModel::clearCache()
     }
 }
 
-QString PhotoModel::getThumbnailCacheKey(const QString &filePath) const
-{
-    // Create unique key based on file path and thumbnail size
-    QString key = QString("%1_%2x%3")
-                      .arg(filePath)
-                      .arg(m_thumbnailSize.width())
-                      .arg(m_thumbnailSize.height());
-    return QString(
-        QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Md5)
-            .toHex());
-}
-
-QString PhotoModel::getThumbnailCachePath(const QString &filePath) const
-{
-    return m_cacheDir + "/" + getThumbnailCacheKey(filePath) + ".jpg";
-}
-
 void PhotoModel::requestThumbnail(int index)
 {
     if (index < 0 || index >= m_photos.size())
@@ -247,37 +479,26 @@ void PhotoModel::requestThumbnail(int index)
     PhotoInfo &info = m_photos[index];
     info.thumbnailRequested = true;
 
-    QString cacheKey = getThumbnailCacheKey(info.filePath);
-
-    if (m_activeLoaders.contains(cacheKey) ||
-        m_loadingPaths.contains(info.filePath))
+    if (m_loadingPaths.contains(info.filePath))
         return;
 
     m_loadingPaths.insert(info.filePath);
 
     auto *watcher = new QFutureWatcher<QPixmap>();
-    m_activeLoaders[cacheKey] = watcher;
+    m_activeLoaders[info.filePath] = watcher;
 
-    // Connect the finished signal to handle both images and videos
     connect(watcher, &QFutureWatcher<QPixmap>::finished, this,
-            [this, watcher, cacheKey, filePath = info.filePath]() {
+            [this, watcher, filePath = info.filePath]() {
+                qDebug() << "Thumbnail load finished for:" << filePath;
                 QPixmap thumbnail = watcher->result();
 
-                // Remove from loading sets
                 m_loadingPaths.remove(filePath);
-                m_activeLoaders.remove(cacheKey);
-                // scale down and store in cache
+                m_activeLoaders.remove(filePath);
                 if (!thumbnail.isNull()) {
-                    // Cache the thumbnail (both memory and disk)
                     int cost = thumbnail.width() * thumbnail.height() * 4;
-                    m_thumbnailCache.insert(
-                        cacheKey,
-                        new QPixmap(thumbnail.scaled(m_thumbnailSize,
-                                                     Qt::KeepAspectRatio,
-                                                     Qt::SmoothTransformation)),
-                        cost);
+                    m_thumbnailCache.insert(filePath, new QPixmap(thumbnail),
+                                            cost);
 
-                    // Find the model index and emit dataChanged
                     for (int i = 0; i < m_photos.size(); ++i) {
                         if (m_photos[i].filePath == filePath) {
                             QModelIndex idx = createIndex(i, 0);
@@ -290,53 +511,34 @@ void PhotoModel::requestThumbnail(int index)
                              << QFileInfo(filePath).fileName();
                 }
 
-                // Clean up the watcher
                 watcher->deleteLater();
             });
 
-    // Determine if this is a video or image and load accordingly
     bool isVideo = info.fileName.endsWith(".MOV", Qt::CaseInsensitive) ||
                    info.fileName.endsWith(".MP4", Qt::CaseInsensitive) ||
                    info.fileName.endsWith(".M4V", Qt::CaseInsensitive);
 
-    QString cachePath = getThumbnailCachePath(info.filePath);
-
     QFuture<QPixmap> future;
     if (isVideo) {
-        // Load video thumbnail asynchronously
-        // todo: implement
-        future = QtConcurrent::run([this]() {
-            // Check disk cache first
-            // if (QFile::exists(cachePath)) {
-            //     QPixmap cached(cachePath);
-            //     if (!cached.isNull() && cached.size() == m_thumbnailSize) {
-            //         qDebug() << "Video disk cache HIT for:"
-            //                  << QFileInfo(info.filePath).fileName();
-            //         return cached;
-            //     }
-            // }
+        future = QtConcurrent::run([this, info]() {
+            // Acquire semaphore FIRST to limit concurrent video processing
+            qDebug() << "Waiting for semaphore for:" << info.fileName;
+            m_videoThumbnailSemaphore.acquire();
+            qDebug() << "Acquired semaphore for:" << info.fileName;
 
-            // // Generate video thumbnail
-            // QPixmap thumbnail = generateVideoThumbnail(m_device,
-            // info.filePath,
-            //                                            m_thumbnailSize);
+            // Generate video thumbnail using FFmpeg directly (no QMediaPlayer)
+            QPixmap thumbnail = generateVideoThumbnailFFmpeg(
+                m_device, info.filePath, m_thumbnailSize);
 
-            // // Save to disk cache if successful
-            // if (!thumbnail.isNull()) {
-            //     QDir().mkpath(QFileInfo(cachePath).absolutePath());
-            //     if (thumbnail.save(cachePath, "JPG", 85)) {
-            //         qDebug() << "Saved video thumbnail to disk cache:"
-            //                  << QFileInfo(info.filePath).fileName();
-            //     }
-            // }
-            return QPixmap(); // Placeholder until implemented
-            // return thumbnail;
+            // Release semaphore
+            qDebug() << "Releasing semaphore for:" << info.fileName;
+            m_videoThumbnailSemaphore.release();
+            return thumbnail;
         });
     } else {
-        // Load image thumbnail asynchronously (existing logic)
-        future = QtConcurrent::run([info, cachePath, this]() {
+        future = QtConcurrent::run([info, this]() {
             return loadThumbnailFromDevice(m_device, info.filePath,
-                                           m_thumbnailSize, cachePath);
+                                           m_thumbnailSize);
         });
     }
 
@@ -346,66 +548,56 @@ void PhotoModel::requestThumbnail(int index)
 // Static function that runs in worker thread
 QPixmap PhotoModel::loadThumbnailFromDevice(iDescriptorDevice *device,
                                             const QString &filePath,
-                                            const QSize &size,
-                                            const QString &cachePath)
+                                            const QSize &size)
 {
-    // Check disk cache first
-    if (QFile::exists(cachePath)) {
-        QPixmap cached(cachePath);
-        if (!cached.isNull() && cached.size() == size) {
-            qDebug() << "Disk cache HIT for:" << QFileInfo(filePath).fileName();
-            return cached;
-        }
-    }
-
     // Load from device using ServiceManager
     QByteArray imageData = ServiceManager::safeReadAfcFileToByteArray(
         device, filePath.toUtf8().constData());
 
     if (imageData.isEmpty()) {
         qDebug() << "Could not read from device:" << filePath;
-        return QPixmap(); // Return empty pixmap on error
+        return {}; // Return empty pixmap on error
     }
 
-    if (filePath.endsWith(".HEIC")) {
+    if (filePath.endsWith(".HEIC", Qt::CaseInsensitive)) {
         qDebug() << "Loading HEIC image from data for:" << filePath;
         QPixmap img = load_heic(imageData);
-        return img.isNull() ? QPixmap() : img;
+        return img.isNull() ? QPixmap()
+                            : img.scaled(size, Qt::KeepAspectRatio,
+                                         Qt::SmoothTransformation);
     }
 
-    // Load pixmap from data
+    // Use QImageReader for efficient, low-memory scaled loading
+    QBuffer buffer(&imageData);
+    buffer.open(QIODevice::ReadOnly);
+
+    QImageReader reader(&buffer);
+    if (reader.canRead()) {
+        // This is the key optimization: it decodes a smaller image directly,
+        // saving a massive amount of memory.
+        reader.setScaledSize(size);
+        QImage image = reader.read();
+        if (!image.isNull()) {
+            return QPixmap::fromImage(image);
+        }
+        qDebug() << "QImageReader failed to decode" << filePath
+                 << "Error:" << reader.errorString();
+    }
+
+    // Fallback for formats QImageReader might struggle with
     QPixmap original;
-    if (!original.loadFromData(imageData)) {
-        qDebug() << "Could not decode image data for:" << filePath;
-        return QPixmap();
+    if (original.loadFromData(imageData)) {
+        return original.scaled(size, Qt::KeepAspectRatio,
+                               Qt::SmoothTransformation);
     }
 
-    // Scale to thumbnail size
-    QPixmap thumbnail =
-        original.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-
-    // Save to disk cache
-    QDir().mkpath(QFileInfo(cachePath).absolutePath());
-    if (thumbnail.save(cachePath, "JPG", 85)) {
-        qDebug() << "Saved to disk cache:" << QFileInfo(filePath).fileName();
-    }
-
-    return thumbnail;
+    qDebug() << "Could not decode image data for:" << filePath;
+    return {};
 }
 
 QPixmap PhotoModel::loadImage(iDescriptorDevice *device,
-                              const QString &filePath, const QString &cachePath)
+                              const QString &filePath)
 {
-    // Check disk cache first
-    if (QFile::exists(cachePath)) {
-        QPixmap cached(cachePath);
-        if (!cached.isNull()) {
-            qDebug() << "Disk cache HIT for:" << QFileInfo(filePath).fileName();
-            return cached;
-        }
-    }
-
-    // Load from device using ServiceManager
     QByteArray imageData = ServiceManager::safeReadAfcFileToByteArray(
         device, filePath.toUtf8().constData());
 
@@ -420,18 +612,10 @@ QPixmap PhotoModel::loadImage(iDescriptorDevice *device,
         return img.isNull() ? QPixmap() : img;
     }
 
-    // TODO
-    // Load pixmap from data
     QPixmap original;
     if (!original.loadFromData(imageData)) {
         qDebug() << "Could not decode image data for:" << filePath;
         return QPixmap();
-    }
-
-    // Save to disk cache
-    QDir().mkpath(QFileInfo(cachePath).absolutePath());
-    if (original.save(cachePath, "JPG", 85)) {
-        qDebug() << "Saved to disk cache:" << QFileInfo(filePath).fileName();
     }
 
     return original;
@@ -446,25 +630,17 @@ void PhotoModel::populatePhotoPaths()
         return;
     }
 
-    beginResetModel();
     m_allPhotos.clear();
-    m_photos.clear();
 
-    // // Your existing logic to populate photo paths
-    // char **files = nullptr;
-    // qDebug() << "Populating photos from album path:" << m_albumPath;
-
-    // First verify the album path exists
     QByteArray albumPathBytes = m_albumPath.toUtf8();
     const char *albumPathCStr = albumPathBytes.constData();
 
     char **albumInfo = nullptr;
     afc_error_t infoResult =
-        afc_get_file_info(m_device->afcClient, albumPathCStr, &albumInfo);
+        ServiceManager::safeAfcGetFileInfo(m_device, albumPathCStr, &albumInfo);
     if (infoResult != AFC_E_SUCCESS) {
         qDebug() << "Album path does not exist or cannot be accessed:"
                  << m_albumPath << "Error:" << infoResult;
-        endResetModel();
         return;
     }
     if (albumInfo) {
@@ -484,7 +660,6 @@ void PhotoModel::populatePhotoPaths()
     if (readResult != AFC_E_SUCCESS) {
         qDebug() << "Failed to read photo directory:" << photoDir
                  << "Error:" << readResult;
-        endResetModel();
         return;
     }
 
@@ -511,10 +686,8 @@ void PhotoModel::populatePhotoPaths()
         afc_dictionary_free(files);
     }
 
-    // Apply initial filtering and sorting
+    // Apply initial filtering and sorting, which will also reset the model
     applyFilterAndSort();
-
-    endResetModel();
 
     qDebug() << "Loaded" << m_allPhotos.size() << "media files from device";
     qDebug() << "After filtering:" << m_photos.size() << "items shown";
@@ -541,11 +714,16 @@ void PhotoModel::applyFilterAndSort()
 {
     beginResetModel();
 
+    // int i = 0;
     // Filter photos
     m_photos.clear();
     for (const PhotoInfo &info : m_allPhotos) {
         if (matchesFilter(info)) {
             m_photos.append(info);
+            // if (i == 3) {
+            //     break;
+            // }
+            // i++;
         }
     }
 
@@ -634,14 +812,11 @@ QStringList PhotoModel::getFilteredFilePaths() const
 // Helper methods
 QDateTime PhotoModel::extractDateTimeFromFile(const QString &filePath) const
 {
-    // Use AFC to get actual file creation time from device
     plist_t info = nullptr;
-    afc_error_t afc_err = afc_get_file_info_plist(
-        // TODO:AFC CLIENT IS NOT LONG LIVED
-        m_device->afcClient, filePath.toUtf8().constData(), &info);
+    afc_error_t afc_err = ServiceManager::safeAfcGetFileInfoPlist(
+        m_device, filePath.toUtf8().constData(), &info);
 
     if (afc_err == AFC_E_SUCCESS && info) {
-        // Try to get st_birthtime (creation time) first
         plist_t birthtime_node = plist_dict_get_item(info, "st_birthtime");
         if (birthtime_node &&
             plist_get_node_type(birthtime_node) == PLIST_UINT) {

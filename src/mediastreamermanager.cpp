@@ -34,6 +34,7 @@ QUrl MediaStreamerManager::getStreamUrl(iDescriptorDevice *device,
                                         afc_client_t afcClient,
                                         const QString &filePath)
 {
+    QMutexLocker locker(&m_streamersMutex);
 
     // Check if we already have a streamer for this file
     auto it = m_streamers.find(filePath);
@@ -55,12 +56,12 @@ QUrl MediaStreamerManager::getStreamUrl(iDescriptorDevice *device,
         }
     }
 
-    // Create new streamer
-    auto *streamer = new MediaStreamer(device, afcClient, filePath, this);
+    // Create new streamer without a QObject parent
+    auto *streamer = new MediaStreamer(device, afcClient, filePath, nullptr);
     if (!streamer->isListening()) {
         qWarning() << "MediaStreamerManager: Failed to create streamer for"
                    << filePath;
-        streamer->deleteLater();
+        delete streamer;
         return QUrl();
     }
 
@@ -71,10 +72,6 @@ QUrl MediaStreamerManager::getStreamUrl(iDescriptorDevice *device,
     info.refCount = 1;
     m_streamers[filePath] = info;
 
-    // Connect to destruction signal for cleanup
-    connect(streamer, &QObject::destroyed, this,
-            &MediaStreamerManager::onStreamerDestroyed);
-
     qDebug() << "MediaStreamerManager: Created new streamer for" << filePath
              << "at" << streamer->getUrl().toString();
 
@@ -83,52 +80,34 @@ QUrl MediaStreamerManager::getStreamUrl(iDescriptorDevice *device,
 
 void MediaStreamerManager::releaseStreamer(const QString &filePath)
 {
-
+    QMutexLocker locker(&m_streamersMutex);
     auto it = m_streamers.find(filePath);
     if (it != m_streamers.end()) {
         it->refCount--;
         qDebug() << "MediaStreamerManager: Released streamer for" << filePath
                  << "refCount:" << it->refCount;
 
-        // If no more references, mark for cleanup but don't delete immediately
-        // This allows for quick reuse if the same file is opened again soon
+        // If no more references, delete it immediately.
+        // deleteLater() will not work in a thread without an event loop.
         if (it->refCount <= 0) {
-            qDebug() << "MediaStreamerManager: Streamer for" << filePath
-                     << "ready for cleanup";
+            qDebug() << "MediaStreamerManager: Deleting streamer for"
+                     << filePath;
+            delete it->streamer;
+            m_streamers.erase(it);
         }
     }
 }
 
 void MediaStreamerManager::cleanup()
 {
-
+    QMutexLocker locker(&m_streamersMutex);
     auto it = m_streamers.begin();
     while (it != m_streamers.end()) {
-        if (it->refCount <= 0) {
-            qDebug() << "MediaStreamerManager: Cleaning up streamer for"
-                     << it.key();
-            if (it->streamer) {
-                it->streamer->deleteLater();
-            }
-            it = m_streamers.erase(it);
-        } else {
-            ++it;
+        qDebug() << "MediaStreamerManager: Cleaning up streamer for"
+                 << it.key();
+        if (it->streamer) {
+            delete it->streamer;
         }
-    }
-}
-
-void MediaStreamerManager::onStreamerDestroyed()
-{
-    // Find and remove the destroyed streamer
-    auto it = m_streamers.begin();
-    while (it != m_streamers.end()) {
-        if (it->streamer == sender()) {
-            qDebug() << "MediaStreamerManager: Streamer destroyed for"
-                     << it.key();
-            it = m_streamers.erase(it);
-            break;
-        } else {
-            ++it;
-        }
+        it = m_streamers.erase(it);
     }
 }

@@ -45,6 +45,19 @@ ServiceManager::safeAfcGetFileInfo(iDescriptorDevice *device, const char *path,
         altAfc);
 }
 
+afc_error_t
+ServiceManager::safeAfcGetFileInfoPlist(iDescriptorDevice *device,
+                                        const char *path, plist_t *info,
+                                        std::optional<afc_client_t> altAfc)
+{
+    return executeAfcOperation(
+        device,
+        [path, info](afc_client_t client) {
+            return afc_get_file_info_plist(client, path, info);
+        },
+        altAfc);
+}
+
 afc_error_t ServiceManager::safeAfcFileOpen(iDescriptorDevice *device,
                                             const char *path,
                                             afc_file_mode_t mode,
@@ -108,6 +121,18 @@ afc_error_t ServiceManager::safeAfcFileSeek(iDescriptorDevice *device,
         device,
         [handle, offset, whence](afc_client_t client) {
             return afc_file_seek(client, handle, offset, whence);
+        },
+        altAfc);
+}
+
+afc_error_t ServiceManager::safeAfcFileTell(iDescriptorDevice *device,
+                                            uint64_t handle, uint64_t *position,
+                                            std::optional<afc_client_t> altAfc)
+{
+    return executeAfcOperation(
+        device,
+        [handle, position](afc_client_t client) {
+            return afc_file_tell(client, handle, position);
         },
         altAfc);
 }

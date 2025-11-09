@@ -202,7 +202,7 @@ DeviceInfo fullDeviceInfo(const pugi::xml_document &doc,
     int minor = (parts.length() > 1) ? parts[1].toInt() : 0;
     int patch = (parts.length() > 2) ? parts[2].toInt() : 0;
 
-    d.parsedDeviceVersion = IDESCRIPTOR_DEVICE_VERSION(major, minor, patch);
+    d.parsedDeviceVersion = IDEVICE_DEVICE_VERSION(major, minor, patch);
 
     /*DiskInfo*/
     try {

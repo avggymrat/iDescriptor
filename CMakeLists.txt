@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
-project(iDescriptor VERSION 0.1 LANGUAGES CXX)
+project(iDescriptor VERSION 0.1.0 LANGUAGES CXX)
 
 # Feature options
 option(ENABLE_RECOVERY_DEVICE_SUPPORT "Enable recovery device support (requires libirecovery)" ON)
+option(PACKAGE_MANAGER_MANAGED "Build as package manager managed version (auto updates will be handled by the package manager)" OFF)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
@@ -116,6 +117,12 @@ find_library(TATSU_LIBRARY
 pkg_check_modules(QRENCODE REQUIRED IMPORTED_TARGET libqrencode)
 pkg_check_modules(HEIF REQUIRED IMPORTED_TARGET libheif)
 pkg_check_modules(ZIP REQUIRED IMPORTED_TARGET libzip)
+
+# Add FFmpeg libraries for video thumbnail generation
+pkg_check_modules(AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
+pkg_check_modules(AVCODEC REQUIRED IMPORTED_TARGET libavcodec)
+pkg_check_modules(AVUTIL REQUIRED IMPORTED_TARGET libavutil)
+pkg_check_modules(SWSCALE REQUIRED IMPORTED_TARGET libswscale)
 
 if(ENABLE_RECOVERY_DEVICE_SUPPORT)
     find_library(IRECOVERY_LIBRARY 
@@ -264,6 +271,10 @@ target_link_libraries(iDescriptor PRIVATE
     qtermwidget6
     PkgConfig::HEIF
     PkgConfig::ZIP
+    PkgConfig::AVFORMAT
+    PkgConfig::AVCODEC
+    PkgConfig::AVUTIL
+    PkgConfig::SWSCALE
     airplay
     ipatool-go
     ZUpdater
@@ -315,6 +326,15 @@ target_compile_definitions(iDescriptor PRIVATE
 if(ENABLE_RECOVERY_DEVICE_SUPPORT)
     target_compile_definitions(iDescriptor PRIVATE ENABLE_RECOVERY_DEVICE_SUPPORT)
 endif()
+
+if (PACKAGE_MANAGER_MANAGED)
+    target_compile_definitions(iDescriptor PRIVATE PACKAGE_MANAGER_MANAGED)
+    message(STATUS "Building as package manager managed version, updates will be handled by the package manager")
+endif()
+
+target_compile_definitions(iDescriptor PRIVATE 
+    APP_VERSION="${PROJECT_VERSION}"
+)
 
 set_target_properties(iDescriptor PROPERTIES
     ${BUNDLE_ID_OPTION}

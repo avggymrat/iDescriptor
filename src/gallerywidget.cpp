@@ -182,14 +182,18 @@ void GalleryWidget::onSortOrderChanged()
                                                   : "Oldest First");
 }
 
+PhotoModel::FilterType GalleryWidget::getCurrentFilterType() const
+{
+    int filterValue = m_filterComboBox->currentData().toInt();
+    return static_cast<PhotoModel::FilterType>(filterValue);
+}
+
 void GalleryWidget::onFilterChanged()
 {
     if (!m_model)
         return;
 
-    int filterValue = m_filterComboBox->currentData().toInt();
-    PhotoModel::FilterType filter =
-        static_cast<PhotoModel::FilterType>(filterValue);
+    PhotoModel::FilterType filter = getCurrentFilterType();
     m_model->setFilterType(filter);
 
     QString filterName = m_filterComboBox->currentText();
@@ -447,7 +451,7 @@ void GalleryWidget::onAlbumSelected(const QString &albumPath)
 
     // Create model if not exists
     if (!m_model) {
-        m_model = new PhotoModel(m_device, this);
+        m_model = new PhotoModel(m_device, getCurrentFilterType(), this);
         m_listView->setModel(m_model);
 
         // Update export button states based on selection

@@ -21,6 +21,7 @@
 #define GALLERYWIDGET_H
 
 #include "iDescriptor.h"
+#include "photomodel.h"
 #include <QWidget>
 
 QT_BEGIN_NAMESPACE
@@ -34,7 +35,6 @@ class QLabel;
 class QStandardItem;
 QT_END_NAMESPACE
 
-class PhotoModel;
 class ExportManager;
 class ExportProgressDialog;
 
@@ -67,6 +67,7 @@ private:
     QIcon loadAlbumThumbnail(const QString &albumPath);
     void loadAlbumThumbnailAsync(const QString &albumPath, QStandardItem *item);
     void onPhotoContextMenu(const QPoint &pos);
+    PhotoModel::FilterType getCurrentFilterType() const;
 
     iDescriptorDevice *m_device;
     bool m_loaded = false;

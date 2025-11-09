@@ -54,18 +54,39 @@ QByteArray read_afc_file_to_byte_array(afc_client_t afcClient, const char *path)
     QByteArray buffer;
     buffer.resize(fileSize);
 
-    uint32_t bytesRead = 0;
-    afc_error_t read_err = afc_file_read(afcClient, fd_handle, buffer.data(),
-                                         buffer.size(), &bytesRead);
+    uint64_t totalBytesRead = 0;
+    const uint32_t CHUNK_SIZE = 1024 * 1024; // Read in 1MB chunks
+    char *p = buffer.data();
+
+    while (totalBytesRead < fileSize) {
+        uint32_t bytesToRead =
+            std::min((uint64_t)CHUNK_SIZE, fileSize - totalBytesRead);
+        uint32_t bytesReadThisChunk = 0;
+        afc_error_t read_err =
+            afc_file_read(afcClient, fd_handle, p + totalBytesRead, bytesToRead,
+                          &bytesReadThisChunk);
+
+        if (read_err != AFC_E_SUCCESS) {
+            qDebug() << "AFC Error: Read failed for file" << path
+                     << "Error:" << read_err;
+            afc_file_close(afcClient, fd_handle);
+            return QByteArray();
+        }
+
+        if (bytesReadThisChunk == 0) {
+            // Premature end of file
+            break;
+        }
+        totalBytesRead += bytesReadThisChunk;
+    }
 
     afc_file_close(afcClient, fd_handle);
 
-    if (read_err != AFC_E_SUCCESS || bytesRead != fileSize) {
+    if (totalBytesRead != fileSize) {
         qDebug() << "AFC Error: Read mismatch for file" << path
-                 << "Error:" << read_err << "Read:" << bytesRead
-                 << "Expected:" << fileSize;
+                 << "Read:" << totalBytesRead << "Expected:" << fileSize;
         return QByteArray(); // Read failed
     }
 
     return buffer;
-};
+}

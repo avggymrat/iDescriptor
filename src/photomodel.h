@@ -27,6 +27,7 @@
 #include <QDateTime>
 #include <QFutureWatcher>
 #include <QPixmap>
+#include <QSemaphore>
 #include <QSize>
 #include <QStandardPaths>
 
@@ -49,7 +50,8 @@ public:
 
     enum FilterType { All, ImagesOnly, VideosOnly };
 
-    explicit PhotoModel(iDescriptorDevice *device, QObject *parent = nullptr);
+    explicit PhotoModel(iDescriptorDevice *device, FilterType filterType,
+                        QObject *parent = nullptr);
     ~PhotoModel();
 
     // QAbstractItemModel interface
@@ -81,13 +83,12 @@ public:
     QStringList getAllFilePaths() const;
     QStringList getFilteredFilePaths() const;
 
-    static QPixmap loadImage(iDescriptorDevice *device, const QString &filePath,
-                             const QString &cachePath);
+    static QPixmap loadImage(iDescriptorDevice *device,
+                             const QString &filePath);
     // Static helper methods
     static QPixmap loadThumbnailFromDevice(iDescriptorDevice *device,
                                            const QString &filePath,
-                                           const QSize &size,
-                                           const QString &cachePath);
+                                           const QSize &size);
 signals:
     void thumbnailNeedsToBeLoaded(int index);
     void exportRequested(const QStringList &filePaths);
@@ -105,7 +106,6 @@ private:
     // Thumbnail management
     QSize m_thumbnailSize;
     mutable QCache<QString, QPixmap> m_thumbnailCache;
-    QString m_cacheDir;
     mutable QHash<QString, QFutureWatcher<QPixmap> *> m_activeLoaders;
     mutable QSet<QString> m_loadingPaths;
 
@@ -119,15 +119,13 @@ private:
     void sortPhotos(QList<PhotoInfo> &photos) const;
     bool matchesFilter(const PhotoInfo &info) const;
 
-    QString getThumbnailCacheKey(const QString &filePath) const;
-    QString getThumbnailCachePath(const QString &filePath) const;
-
     QDateTime extractDateTimeFromFile(const QString &filePath) const;
     PhotoInfo::FileType determineFileType(const QString &fileName) const;
 
-    static QPixmap generateVideoThumbnail(iDescriptorDevice *device,
-                                          const QString &filePath,
-                                          const QSize &requestedSize);
+    static QPixmap generateVideoThumbnailFFmpeg(iDescriptorDevice *device,
+                                                const QString &filePath,
+                                                const QSize &requestedSize);
+    static QSemaphore m_videoThumbnailSemaphore;
 };
 
 #endif // PHOTOMODEL_H

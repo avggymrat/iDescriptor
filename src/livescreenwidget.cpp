@@ -31,14 +31,14 @@
 #include <QVBoxLayout>
 #include <libimobiledevice/libimobiledevice.h>
 #include <libimobiledevice/screenshotr.h>
-
+// todo add a retry button when failed
 LiveScreenWidget::LiveScreenWidget(iDescriptorDevice *device, QWidget *parent)
     : QWidget{parent}, m_device(device), m_timer(nullptr),
       m_shotrClient(nullptr), m_fps(20)
 {
     setWindowTitle("Live Screen - iDescriptor");
 
-    unsigned int device_version = get_device_version(m_device->device);
+    unsigned int device_version = idevice_get_device_version(m_device->device);
     unsigned int deviceMajorVersion = (device_version >> 16) & 0xFF;
 
     if (deviceMajorVersion > 16) {
@@ -91,23 +91,21 @@ LiveScreenWidget::LiveScreenWidget(iDescriptorDevice *device, QWidget *parent)
     // Start the initialization process - auto-mount mode
     auto *helper = new DevDiskImageHelper(m_device, this);
 
-    connect(
-        helper, &DevDiskImageHelper::mountingCompleted, this,
-        [this, helper](bool success) {
-            helper->deleteLater();
+    connect(helper, &DevDiskImageHelper::mountingCompleted, this,
+            [this, helper](bool success) {
+                helper->deleteLater();
 
-            if (success) {
-                // for some reason it does not work immediately, so delay a bit
-                QTimer::singleShot(1000, this, [this]() {
-                    initializeScreenshotService(true);
-                });
-            } else {
-                m_statusLabel->setText("Failed to mount developer disk image");
-                QMessageBox::critical(this, "Mount Failed",
-                                      "Could not mount developer disk image.\n"
-                                      "Screenshot feature is not available.");
-            }
-        });
+                if (success) {
+                    // for some reason it does not work immediately, so delay a
+                    // bit
+                    QTimer::singleShot(1000, this, [this]() {
+                        initializeScreenshotService(true);
+                    });
+                } else {
+                    m_statusLabel->setText(
+                        "Failed to mount developer disk image");
+                }
+            });
 
     helper->start();
 }

@@ -97,7 +97,7 @@ mobile_image_mounter_error_t mount_dev_image(idevice_t device,
         goto leave;
     }
 
-    if (device_version >= IDESCRIPTOR_DEVICE_VERSION(7, 0, 0)) {
+    if (device_version >= IDEVICE_DEVICE_VERSION(7, 0, 0)) {
         disk_image_upload_type = DISK_IMAGE_UPLOAD_TYPE_UPLOAD_IMAGE;
     }
 
@@ -139,7 +139,7 @@ mobile_image_mounter_error_t mount_dev_image(idevice_t device,
     qDebug() << "Using image:" << image_path;
     qDebug() << "Using signature:" << image_sig_path;
 
-    if (device_version >= IDESCRIPTOR_DEVICE_VERSION(16, 0, 0)) {
+    if (device_version >= IDEVICE_DEVICE_VERSION(16, 0, 0)) {
         uint8_t dev_mode_status = 0;
         plist_t val = NULL;
         ldret = lockdownd_get_value(lckd, "com.apple.security.mac.amfi",
@@ -182,14 +182,14 @@ mobile_image_mounter_error_t mount_dev_image(idevice_t device,
         goto leave;
     }
     image_size = fst.st_size;
-    if (device_version < IDESCRIPTOR_DEVICE_VERSION(17, 0, 0) &&
+    if (device_version < IDEVICE_DEVICE_VERSION(17, 0, 0) &&
         stat(image_sig_path, &fst) != 0) {
         qDebug() << "ERROR: stat:" << image_sig_path << ":" << strerror(errno);
         res = -1;
         goto leave;
     }
 
-    if (device_version < IDESCRIPTOR_DEVICE_VERSION(17, 0, 0)) {
+    if (device_version < IDEVICE_DEVICE_VERSION(17, 0, 0)) {
         f = fopen(image_sig_path, "rb");
         if (!f) {
             qDebug() << "Error opening signature file" << image_sig_path << ":"

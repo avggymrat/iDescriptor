@@ -203,7 +203,7 @@ void MediaPreviewDialog::loadMedia()
 void MediaPreviewDialog::loadImage()
 {
     auto future = QtConcurrent::run(
-        [this]() { return PhotoModel::loadImage(m_device, m_filePath, ""); });
+        [this]() { return PhotoModel::loadImage(m_device, m_filePath); });
 
     auto *watcher = new QFutureWatcher<QPixmap>(this);
     connect(watcher, &QFutureWatcher<QPixmap>::finished, this,

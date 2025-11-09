@@ -352,7 +352,6 @@ void iFuseWidget::onProcessFinished(int exitCode,
             "Device mounted successfully at: " + m_currentMountPath, false);
 
         auto *b = new iFuseDiskUnmountButton(m_currentMountPath);
-        MainWindow::sharedInstance()->statusBar()->addPermanentWidget(b);
         QProcess *processToKill = m_ifuseProcess;
         QString currentMountPath = m_currentMountPath;
         connect(b, &iFuseDiskUnmountButton::clicked, this,
@@ -369,6 +368,7 @@ void iFuseWidget::onProcessFinished(int exitCode,
                     MainWindow::sharedInstance()->statusBar()->removeWidget(b);
                     b->deleteLater();
                 });
+        MainWindow::sharedInstance()->statusBar()->addPermanentWidget(b);
         QDesktopServices::openUrl(QUrl::fromLocalFile(currentMountPath));
     } else {
         QString errorOutput = m_ifuseProcess->readAllStandardError();

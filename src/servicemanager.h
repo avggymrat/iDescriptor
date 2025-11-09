@@ -179,6 +179,12 @@ public:
     safeAfcGetFileInfo(iDescriptorDevice *device, const char *path,
                        char ***info,
                        std::optional<afc_client_t> altAfc = std::nullopt);
+
+    static afc_error_t
+    safeAfcGetFileInfoPlist(iDescriptorDevice *device, const char *path,
+                            plist_t *info,
+                            std::optional<afc_client_t> altAfc = std::nullopt);
+
     static afc_error_t
     safeAfcFileOpen(iDescriptorDevice *device, const char *path,
                     afc_file_mode_t mode, uint64_t *handle,
@@ -197,6 +203,10 @@ public:
     static afc_error_t
     safeAfcFileSeek(iDescriptorDevice *device, uint64_t handle, int64_t offset,
                     int whence,
+                    std::optional<afc_client_t> altAfc = std::nullopt);
+    static afc_error_t
+    safeAfcFileTell(iDescriptorDevice *device, uint64_t handle,
+                    uint64_t *position,
                     std::optional<afc_client_t> altAfc = std::nullopt);
 
     // Utility functions

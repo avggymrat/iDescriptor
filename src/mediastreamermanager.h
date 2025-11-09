@@ -35,10 +35,8 @@
  * streamers for the same file. It automatically cleans up unused streamers
  * and provides thread-safe access.
  */
-class MediaStreamerManager : public QObject
+class MediaStreamerManager
 {
-    Q_OBJECT
-
 public:
     /**
      * @brief Get the singleton instance
@@ -68,9 +66,6 @@ public:
 
 private:
     ~MediaStreamerManager();
-
-private slots:
-    void onStreamerDestroyed();
 
 private:
     struct StreamerInfo {

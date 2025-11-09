@@ -37,7 +37,6 @@
 
 #define TOOL_NAME "iDescriptor"
 #define APP_LABEL "iDescriptor"
-#define APP_VERSION "0.1.0"
 #define APP_COPYRIGHT "© 2025 Uncore. All rights reserved."
 #define AFC2_SERVICE_NAME "com.apple.afc2"
 #define RECOVERY_CLIENT_CONNECTION_TRIES 3
@@ -84,6 +83,7 @@ struct DiskInfo {
     uint64_t totalDataAvailable;
 };
 
+// Carefull not all the vars are initialized in init_device.cpp
 struct DeviceInfo {
     enum class ActivationState {
         Activated,
@@ -147,7 +147,6 @@ struct DeviceInfo {
     std::string mobileSubscriberCountryCode;
     std::string mobileSubscriberNetworkCode;
     std::string modelNumber;
-    // NonVolatileRAM omitted (unknown type)
     std::string ioNVRAMSyncNowProperty;
     bool systemAudioVolumeSaved;
     bool autoBoot;
@@ -426,56 +425,3 @@ bool isDarkMode();
 
 instproxy_error_t install_IPA(idevice_t device, afc_client_t afc,
                               const char *filePath);
-
-#define IDESCRIPTOR_DEVICE_VERSION(maj, min, patch)                            \
-    ((((maj) & 0xFF) << 16) | (((min) & 0xFF) << 8) | ((patch) & 0xFF))
-
-/*
-    we need this because idevice_get_device_version
-    is not always available in libimobiledevice
-    which could cause issues when installed from package managers
-*/
-inline unsigned int get_device_version(idevice_t _device)
-{
-    if (!_device) {
-        return 0;
-    }
-
-    lockdownd_client_t lockdown = NULL;
-    if (lockdownd_client_new_with_handshake(
-            _device, &lockdown, "iDescriptor") != LOCKDOWN_E_SUCCESS) {
-        return 0;
-    }
-
-    plist_t node = NULL;
-    if (lockdownd_get_value(lockdown, NULL, "ProductVersion", &node) !=
-        LOCKDOWN_E_SUCCESS) {
-        lockdownd_client_free(lockdown);
-        return 0;
-    }
-
-    unsigned int version_number = 0;
-    if (node && plist_get_node_type(node) == PLIST_STRING) {
-        char *version_string = NULL;
-        plist_get_string_val(node, &version_string);
-        if (version_string) {
-            QString q_version = QString(version_string);
-            QStringList parts = q_version.split('.');
-
-            int major = (parts.length() > 0) ? parts[0].toInt() : 0;
-            int minor = (parts.length() > 1) ? parts[1].toInt() : 0;
-            int patch = (parts.length() > 2) ? parts[2].toInt() : 0;
-
-            version_number = IDESCRIPTOR_DEVICE_VERSION(major, minor, patch);
-
-            free(version_string);
-        }
-    }
-
-    if (node) {
-        plist_free(node);
-    }
-    lockdownd_client_free(lockdown);
-
-    return version_number;
-}

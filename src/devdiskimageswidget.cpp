@@ -186,7 +186,7 @@ void DevDiskImagesWidget::displayImages()
     // todo wtf is this
     if (m_currentDevice && m_currentDevice->device) {
         unsigned int device_version =
-            get_device_version(m_currentDevice->device);
+            idevice_get_device_version(m_currentDevice->device);
         deviceMajorVersion = (device_version >> 16) & 0xFF;
         deviceMinorVersion = (device_version >> 8) & 0xFF;
         hasConnectedDevice = true;

@@ -143,7 +143,7 @@ VirtualLocation::VirtualLocation(iDescriptorDevice *device, QWidget *parent)
             });
 
     DevDiskManager::sharedInstance()->downloadCompatibleImage(m_device);
-    unsigned int device_version = get_device_version(m_device->device);
+    unsigned int device_version = idevice_get_device_version(m_device->device);
     unsigned int deviceMajorVersion = (device_version >> 16) & 0xFF;
 
     if (deviceMajorVersion > 16) {
