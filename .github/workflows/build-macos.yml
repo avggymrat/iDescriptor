@@ -36,9 +36,9 @@ jobs:
           version: ${{ env.QT_VERSION }}
           modules: "qtmultimedia qtlocation qtpositioning qtserialport"
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v6
         with:
-          bun-version: latest
+          node-version: 24
 
       - name: Update pkgconfig path
         run: |
@@ -181,7 +181,7 @@ jobs:
 
       - name: Create DMG
         run: |
-          bun install -g create-dmg
+          npm install -g create-dmg
           create-dmg --volname "iDescriptor" --window-size 500 300 --icon-size 100 --app-drop-link 400 150 --icon "iDescriptor.app" 100 150 "build/iDescriptor.dmg" "build/iDescriptor.app" --no-code-sign
 
       - name: Upload Artifact
